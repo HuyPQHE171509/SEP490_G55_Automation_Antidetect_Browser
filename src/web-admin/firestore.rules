@@ -1,0 +1,41 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: check if the caller is admin (role stored in their own user doc)
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // users collection
+    // - Anyone authenticated can read/write their own document (needed for login upsert)
+    // - Admin can read all user documents (needed for Users admin page)
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read: if isAdmin();
+    }
+
+    // orders collection (managed by backend, no direct client access needed)
+    match /orders/{orderId} {
+      allow read: if request.auth != null
+        && (resource.data.userEmail == request.auth.token.email
+            || resource.data.email == request.auth.token.email);
+      allow read, write: if isAdmin();
+    }
+
+    // licenses collection
+    match /licenses/{licenseId} {
+      allow read: if request.auth != null
+        && resource.data.email == request.auth.token.email;
+      allow read, write: if isAdmin();
+    }
+
+    // config: admin only
+    match /config/{docId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}
