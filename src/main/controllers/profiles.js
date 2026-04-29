@@ -306,17 +306,18 @@ async function launchProfileInternal(profileId, options = {}) {
     if (detectedChromeVersion) appendLog(profileId, `[binary] detected version=${detectedChromeVersion}`);
 
 
-    // safeMode: true (default) → skip CDP emulation commands (userAgent, locale,
-    // timezone, geolocation) that Cloudflare enterprise detects.
-    // Only viewport and proxy are safe because they don't use CDP Emulation APIs.
-    // safeMode: skip Object.defineProperty overrides to bypass Cloudflare Enterprise (Chrome only).
-    // Firefox can't bypass Cloudflare regardless (TLS fingerprint), so force safeMode=false
-    // to enable full fingerprint injection on Firefox.
-    const safeMode = isFirefox ? false : (settings?.safeMode !== false);
+    // safeMode: opt-in Cloudflare Enterprise bypass mode — skips CDP emulation (UA, locale,
+    // timezone, geolocation) and Object.defineProperty overrides that CF detects.
+    // Disabled by default so fingerprint injection works normally.
+    // Enable via settings.safeMode=true only when targeting Cloudflare Enterprise.
+    // Firefox: always false (CF blocks Firefox by TLS regardless; need full injection).
+    const safeMode = isFirefox ? false : (settings?.safeMode === true);
     const apply = (settings && settings.applyOverrides) || {};
-    const applyUA = !safeMode && apply.userAgent !== false;
-    const applyLang = !safeMode && apply.language !== false;
-    const applyTz = !safeMode && apply.timezone !== false;
+    // Identity section toggle controls UA, language, timezone at context (CDP) level
+    const identitySectionEnabled = settings?.identity?.enabled !== false;
+    const applyUA = !safeMode && apply.userAgent !== false && identitySectionEnabled;
+    const applyLang = !safeMode && apply.language !== false && identitySectionEnabled;
+    const applyTz = !safeMode && apply.timezone !== false && identitySectionEnabled;
     const applyViewport = apply.viewport !== false; // viewport is safe even in safeMode
     const applyGeo = !safeMode && apply.geolocation !== false;
     const contextOptions = { proxy, extraHTTPHeaders: {} };
