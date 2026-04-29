@@ -77,7 +77,7 @@ export default function Licenses() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
               <tr>
-                {['Email', 'License Key', 'Machine Code', 'Kích hoạt lúc', 'Trạng thái', 'Hành động'].map(h => (
+                {['Email', 'License Key', 'Tier', 'Machine Code', 'Kích hoạt lúc', 'Trạng thái', 'Hành động'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
@@ -87,6 +87,13 @@ export default function Licenses() {
                 <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
                   <td className="px-4 py-3 text-slate-700 dark:text-slate-200">{l.email || '—'}</td>
                   <td className="px-4 py-3 font-mono text-xs text-primary">{l.licenseKey || '—'}</td>
+                  <td className="px-4 py-3">
+                    {l.tier === 'trial' ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-cyan-500/15 text-cyan-400 border border-cyan-500/20">Trial</span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/20">Pro</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-500">{l.activatedMachine || <span className="text-slate-300 italic">Chưa kích hoạt</span>}</td>
                   <td className="px-4 py-3 text-xs text-slate-400">{l.activatedAt ? new Date(l.activatedAt).toLocaleDateString('vi-VN') : '—'}</td>
                   <td className="px-4 py-3">
