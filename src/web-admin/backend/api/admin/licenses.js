@@ -3,18 +3,19 @@
  * POST /api/admin/licenses/:email/reset  — remove machine binding (user can re-activate on new machine)
  * POST /api/admin/licenses/:email/revoke — set status to revoked
  */
-import { getAllOrders, findOrderEntryByEmail, updateOrder } from '../lib/storage.js';
+import { getAllOrders, findActiveOrderByEmail, updateOrder } from '../lib/storage.js';
 
 export async function listLicenses(req, res) {
   if (req.method !== 'GET') return res.status(405).end();
   try {
     const orders = await getAllOrders();
     const licenses = orders
-      .filter(o => o.status === 'paid')
+      .filter(o => o.status === 'paid' || o.status === 'trial')
       .map(o => ({
         orderCode: o._orderCode,
         email: o.userEmail || o.email,
         licenseKey: o.licenseKey,
+        tier: o.tier || 'pro',
         activatedMachine: o.activatedMachine,
         activatedAt: o.activatedAt,
         createdAt: o.createdAt,
@@ -36,12 +37,11 @@ export async function resetMachine(req, res) {
   if (!email) return res.status(400).json({ error: 'Email required.' });
 
   try {
-    const entry = await findOrderEntryByEmail(email);
-    if (!entry) return res.status(404).json({ error: 'No paid order found for this email.' });
+    const entry = await findActiveOrderByEmail(email);
+    if (!entry) return res.status(404).json({ error: 'No active order found for this email.' });
 
     await updateOrder(entry.orderCode, {
       activatedMachine: null,
-      licenseKey: null,
       activatedAt: null,
       resetByAdmin: req.adminEmail,
       resetAt: new Date().toISOString(),
@@ -60,8 +60,8 @@ export async function revokeLicense(req, res) {
   if (!email) return res.status(400).json({ error: 'Email required.' });
 
   try {
-    const entry = await findOrderEntryByEmail(email);
-    if (!entry) return res.status(404).json({ error: 'No paid order found for this email.' });
+    const entry = await findActiveOrderByEmail(email);
+    if (!entry) return res.status(404).json({ error: 'No active order found for this email.' });
 
     await updateOrder(entry.orderCode, {
       status: 'revoked',
