@@ -308,11 +308,19 @@ async function saveProfileInternal(profile) {
         }
         profiles[idx] = { ...profiles[idx], ...merged, updatedAt: nowIso };
       } else {
+        const licensed = isLicenseActivated();
+        if (!licensed && profiles.length >= 5) {
+          return { success: false, error: 'Free plan is limited to a maximum of 5 profiles. Please activate a license.' };
+        }
         const prepared = normalizeProfileInput(profile, null);
         prepared.name = makeUniqueName(prepared.name, profiles, prepared.id);
         profiles.push({ ...prepared, createdAt: nowIso });
       }
     } else {
+      const licensed = isLicenseActivated();
+      if (!licensed && profiles.length >= 5) {
+        return { success: false, error: 'Free plan is limited to a maximum of 5 profiles. Please activate a license.' };
+      }
       let newId = generateShortId();
       // Ensure uniqueness just in case
       const existingIds = new Set((profiles || []).map(p => p.id));

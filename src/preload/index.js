@@ -87,6 +87,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Machine License
   getMachineCode: () => ipcRenderer.invoke('get-machine-code'),
   validateLicense: (key) => ipcRenderer.invoke('validate-license', key),
+  deactivateLicense: () => ipcRenderer.invoke('deactivate-license'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
   // Scripts

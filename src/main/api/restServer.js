@@ -211,7 +211,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
         return reply.code(403).send({
           success: false,
           error:
-            "Free plan giới hạn tối đa 5 profiles. Vui lòng kích hoạt license để tạo thêm.",
+            "Free plan is limited to a maximum of 5 profiles. Please activate a license.",
         });
       }
 

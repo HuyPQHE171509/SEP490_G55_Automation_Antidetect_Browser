@@ -316,7 +316,7 @@ function App() {
       if (isNewProfile && !isPaidUser) {
         const currentProfileCount = (profiles || []).length;
         if (currentProfileCount >= 5) {
-          alert('Free plan giới hạn tối đa 5 profiles.\n\nVui lòng nâng cấp license để tạo thêm profile.');
+          alert('Free plan is limited to a maximum of 5 profiles.\n\nPlease upgrade your license to create more profiles.');
           return;
         }
       }
