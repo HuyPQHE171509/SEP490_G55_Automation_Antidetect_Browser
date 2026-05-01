@@ -6,7 +6,7 @@
 //   • web-admin.authStore.forgotPassword  (UC_01.03) — 7 cases
 //   • web-admin.Register.acceptEula       (UC_01.04) — 7 cases (UI checkbox)
 // EULA validation lives in RegisterPage.jsx (line 81) — tested in the
-// "RegisterPage.acceptEula" block below, NOT in the register store block.
+// "RegisterPage.acceptEula" block below, NOT in the register store block
 
 const mockSignInWithEmail = jest.fn();
 const mockSignInWithGoogle = jest.fn();
