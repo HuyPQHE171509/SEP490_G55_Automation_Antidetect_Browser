@@ -344,13 +344,20 @@ function App() {
     try {
       const batch = [];
       for (let i = 1; i <= count; i++) {
-        const fpParams = engine === 'camoufox' || engine === 'playwright-firefox'
-          ? { browser: 'Firefox', userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0' }
-          : undefined;
         batch.push({
           name: `${namePrefix} ${i}`,
-          settings: { engine },
-          ...(fpParams && { fingerprint: fpParams })
+          settings: {
+            engine,
+            identity: { enabled: false },
+            hardware: { enabled: false },
+            display:  { enabled: false },
+            canvas:   { enabled: false },
+            webgl:    { enabled: false },
+            audio:    { enabled: false },
+            media:    { enabled: false },
+            network:  { enabled: false },
+            battery:  { enabled: false },
+          },
         });
       }
       const res = await api.saveProfilesBulk(batch);

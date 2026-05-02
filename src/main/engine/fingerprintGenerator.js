@@ -94,12 +94,15 @@ const SCREEN_RESOLUTIONS = [
   { res: '1536x864', weight: 8 },
   { res: '1440x900', weight: 6 },
   { res: '1680x1050', weight: 4 },
+  { res: '1920x1200', weight: 3 },
   { res: '2560x1600', weight: 3 },
   { res: '3840x2160', weight: 3 },
   { res: '1280x720', weight: 3 },
   { res: '1600x900', weight: 3 },
   { res: '3440x1440', weight: 2 },
+  { res: '1280x800', weight: 1 },
   { res: '1280x1024', weight: 1 },
+  { res: '1024x768',  weight: 1 },
 ];
 
 const LOCALE_TIMEZONE_PAIRS = [

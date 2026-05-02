@@ -169,6 +169,20 @@ function normalizeProfileInput(input = {}, existing = null) {
   if (!settings.engine || settings.engine === 'auto' || settings.engine === 'cdp') {
     settings.engine = 'playwright';
   }
+  // Sync windowWidth/windowHeight from fingerprint.screenResolution for new profiles
+  // only when the caller did not explicitly provide window dimensions
+  if (isNewProfile && fingerprint.screenResolution && !input.settings?.windowWidth && !input.settings?.windowHeight) {
+    const parts = fingerprint.screenResolution.split('x');
+    if (parts.length === 2) {
+      const w = parseInt(parts[0], 10);
+      const h = parseInt(parts[1], 10);
+      if (w > 0 && h > 0) {
+        settings.windowWidth = w;
+        settings.windowHeight = h;
+      }
+    }
+  }
+
   const automation = deepMerge(DEFAULT_AUTOMATION, deepMerge(base.automation || {}, input.automation || {}));
   const active = (input.active != null) ? !!input.active : (base.active != null ? !!base.active : true);
   const id = input.id || base.id;
