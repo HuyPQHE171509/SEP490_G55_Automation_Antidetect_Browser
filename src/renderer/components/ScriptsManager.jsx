@@ -595,31 +595,6 @@ function ScriptsTab({ profiles }) {
                                 value={editing.code} onChange={v => setEditing(p => ({ ...p, code: v || '' }))}
                                 options={{ minimap: { enabled: false }, fontSize: 13, lineNumbers: 'on', scrollBeyondLastLine: false, automaticLayout: true, tabSize: 2, wordWrap: 'on', padding: { top: 8 } }} />
                         </div>
-                        {/* Run bar */}
-                        <div className="px-3 py-2 flex items-center gap-3" style={{ borderTop: '1px solid var(--border)', background: 'var(--card2)' }}>
-                            <select className="rounded px-2 py-1 text-[0.72rem]" style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
-                                value={runProfileId} onChange={e => setRunProfileId(e.target.value)}>
-                                <option value="">Select profile to run...</option>
-                                {profiles.map(p => <option key={p.id} value={p.id}>{p.name || p.id}</option>)}
-                            </select>
-                            <button className="btn btn-success text-[0.75rem] flex items-center gap-1" onClick={() => editing?.id ? openRunModal(editing) : alert('Save script first.')} disabled={running}>
-                                {running ? <><RefreshCw size={14} className="animate-spin" /> Running...</> : <><Play size={14} /> Run</>}
-                            </button>
-                        </div>
-                        {/* Run result */}
-                        {runResult && (
-                            <div className="max-h-[150px] font-mono text-[0.72rem] overflow-y-auto p-3" style={{ borderTop: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--fg)' }}>
-                                <div className={`mb-2 flex items-center gap-2 font-bold ${runResult.success ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                    {runResult.success ? '✅ Completed' : '❌ Error'} {runResult.error && `— ${runResult.error}`}
-                                </div>
-                                {runResult.logs?.map((l, i) => (
-                                    <div key={i} className="mb-0.5">
-                                        <span className="mr-2" style={{ color: 'var(--muted)' }}>[{new Date(l.time).toLocaleTimeString()}]</span>
-                                        <span>{l.message}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
                     </div>
                 </>
             ) : (
@@ -979,7 +954,6 @@ function BulkRunModal({ script, profiles = [], onClose }) {
 /* ═══════════════ Run Script Modal ═══════════════ */
 function RunScriptModal({ script, profiles = [], defaultProfileId = '', onClose, onComplete }) {
     const [selectedProfileId, setSelectedProfileId] = useState(defaultProfileId || '');
-    const [browserMode, setBrowserMode] = useState(script?.browserMode || 'visible');
     const [isRunning, setIsRunning] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [result, setResult] = useState(null);
@@ -996,7 +970,7 @@ function RunScriptModal({ script, profiles = [], defaultProfileId = '', onClose,
         try {
             const res = await window.electronAPI.executeScript(selectedProfileId, script.id, {
                 timeoutMs: 120000,
-                headless: browserMode === 'headless',
+                headless: script?.browserMode === 'headless',
             });
             setResult(res);
             setLogs(res.logs || []);
@@ -1043,6 +1017,9 @@ function RunScriptModal({ script, profiles = [], defaultProfileId = '', onClose,
                         <div>
                             <h3 className="text-[0.9rem] font-bold" style={{ color: 'var(--fg)' }}>Run Script</h3>
                             <p className="text-[0.7rem]" style={{ color: 'var(--muted)' }}>{script?.name || 'Untitled Script'}</p>
+                            <p className="text-[0.65rem]" style={{ color: 'var(--primary)' }}>
+                                Mode: {script?.browserMode === 'headless' ? 'Headless (background)' : 'Visible (window)'}
+                            </p>
                         </div>
                     </div>
                     <button className="p-1.5 rounded-lg transition hover:brightness-125" style={{ background: 'var(--glass)', color: 'var(--muted)' }} onClick={onClose}>
@@ -1059,29 +1036,9 @@ function RunScriptModal({ script, profiles = [], defaultProfileId = '', onClose,
                         </div>
                     )}
 
-                    {/* Browser Mode */}
-                    <div>
-                        <label className="text-[0.72rem] font-semibold block mb-2" style={{ color: 'var(--fg)' }}>Browser Mode</label>
-                        <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border2)' }}>
-                            <button className="flex-1 px-3 py-2 text-[0.75rem] font-medium transition flex items-center justify-center gap-2"
-                                style={{ background: browserMode === 'visible' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'visible' ? '#fff' : 'var(--fg)' }}
-                                onClick={() => setBrowserMode('visible')}>
-                                <span style={{ fontSize: '1rem' }}>🖥️</span> Visible
-                            </button>
-                            <button className="flex-1 px-3 py-2 text-[0.75rem] font-medium transition flex items-center justify-center gap-2"
-                                style={{ background: browserMode === 'headless' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'headless' ? '#fff' : 'var(--fg)', borderLeft: '1px solid var(--border2)' }}
-                                onClick={() => setBrowserMode('headless')}>
-                                <span style={{ fontSize: '1rem' }}>👻</span> Headless
-                            </button>
-                        </div>
-                        <p className="text-[0.65rem] mt-1" style={{ color: 'var(--muted)' }}>
-                            {browserMode === 'headless' ? 'Browser runs in background — no window shown' : 'Browser window will be visible during execution'}
-                        </p>
-                    </div>
-
                     {/* Profile Selection */}
                     <div>
-                        <label className="text-[0.72rem] font-semibold block mb-2" style={{ color: 'var(--fg)' }}>Select Profile</label>
+                        <label className="text-[0.72rem] font-semibold block mb-2" style={{ color: 'var(--fg)' }}>Run with profile</label>
                         <select className="w-full rounded-lg px-3 py-2 text-[0.78rem]"
                             style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
                             value={selectedProfileId} onChange={e => setSelectedProfileId(e.target.value)}>
