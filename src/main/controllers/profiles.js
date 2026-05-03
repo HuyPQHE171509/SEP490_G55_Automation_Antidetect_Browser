@@ -89,6 +89,12 @@ async function launchProfileInternal(profileId, options = {}) {
   if (launchingProfiles.has(profileId)) {
     return { success: false, error: 'Profile is already starting up' };
   }
+  // Bước 1b.5: Kiểm tra giới hạn số lượng browser đồng thời (maxConcurrentBrowsers từ Settings)
+  const { maxConcurrentBrowsers } = loadSettings();
+  const maxAllowed = Math.max(1, parseInt(maxConcurrentBrowsers, 10) || 5);
+  if (runningProfiles.size + launchingProfiles.size >= maxAllowed) {
+    return { success: false, error: `Đã đạt giới hạn ${maxAllowed} browser đồng thời. Dừng profile khác trước khi mở thêm.` };
+  }
   // Bước 1c: Đặt lock và cập nhật trạng thái sang STARTING, broadcast ngay về UI
   launchingProfiles.add(profileId);
   const instanceId = generateInstanceId();
