@@ -1790,11 +1790,11 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
       const { runningProfiles } = require("../state/runtime");
       const running = runningProfiles.get(profileId);
       if (!running)
-        return res
-          .status(404)
-          .json({ success: false, error: "Profile not running" });
+        return reply
+          .code(404)
+          .send({ success: false, error: "Profile not running" });
       if (!running.context) {
-        return res.status(400).json({
+        return reply.code(400).send({
           success: false,
           error: "Behavior simulation requires an active Playwright context",
         });
@@ -1803,9 +1803,9 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
       const pageIndex = Number(req.body?.pageIndex || 0);
       const page = pages[pageIndex] || pages[0];
       if (!page)
-        return res
-          .status(400)
-          .json({ success: false, error: "No page available" });
+        return reply
+          .code(400)
+          .send({ success: false, error: "No page available" });
 
       const behavior = require("../engine/behaviorSimulator");
       const seed = (profileId || "default")
@@ -1834,7 +1834,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
           break;
         case "click":
           if (!opts.selector)
-            return res.status(400).json({
+            return reply.code(400).send({
               success: false,
               error: "selector is required for click action",
             });
@@ -1842,7 +1842,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
           break;
         case "type":
           if (!opts.selector || !opts.text)
-            return res.status(400).json({
+            return reply.code(400).send({
               success: false,
               error: "selector and text are required for type action",
             });
@@ -1852,9 +1852,9 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
           await behavior.simulateIdle(page, rng, opts);
           break;
         default:
-          return res
-            .status(400)
-            .json({ success: false, error: `Unknown action: ${action}` });
+          return reply
+            .code(400)
+            .send({ success: false, error: `Unknown action: ${action}` });
       }
 
       reply.send({ success: true, action });
@@ -1871,9 +1871,9 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
       const { runningProfiles } = require("../state/runtime");
       const running = runningProfiles.get(profileId);
       if (!running)
-        return res
-          .status(404)
-          .json({ success: false, error: "Profile not running" });
+        return reply
+          .code(404)
+          .send({ success: false, error: "Profile not running" });
 
       const { detectBlockedPage } = require("../engine/blockedPageDetector");
       let page;
@@ -1884,9 +1884,9 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
       }
 
       if (!page)
-        return res
-          .status(400)
-          .json({ success: false, error: "No page available" });
+        return reply
+          .code(400)
+          .send({ success: false, error: "No page available" });
       const detection = await detectBlockedPage(page);
       reply.send({ success: true, ...detection });
     } catch (e) {
