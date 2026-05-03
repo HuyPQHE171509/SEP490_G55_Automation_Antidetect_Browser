@@ -352,10 +352,23 @@ function App() {
   // Bulk operations
   const handleCreateBulk = async (count, namePrefix, engine = 'playwright') => {
     try {
+      // Find the highest existing number for this prefix to avoid duplicates
+      const prefixLower = namePrefix.toLowerCase();
+      let maxNum = 0;
+      for (const p of profiles) {
+        const name = (p.name || '').toLowerCase();
+        if (name.startsWith(prefixLower)) {
+          const suffix = (p.name || '').slice(namePrefix.length).trim();
+          const n = parseInt(suffix, 10);
+          if (!isNaN(n) && n > maxNum) maxNum = n;
+        }
+      }
+
       const batch = [];
       for (let i = 1; i <= count; i++) {
+        const num = String(maxNum + i).padStart(4, '0');
         batch.push({
-          name: `${namePrefix} ${i}`,
+          name: `${namePrefix} ${num}`,
           settings: {
             engine,
             identity: { enabled: false },

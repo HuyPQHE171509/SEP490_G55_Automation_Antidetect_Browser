@@ -11,8 +11,35 @@
 }
 
 .browser-manager-card:hover {
-    transform: translateY(-2px);
     box-shadow: var(--shadow) !important;
+}
+
+.browser-manager-card .btn-outline-primary {
+    color: var(--primary);
+    border-color: var(--border2);
+    background: var(--glass-strong);
+}
+
+.browser-manager-card .btn-outline-primary:hover {
+    color: var(--primary);
+    background: rgba(59,130,246,0.1);
+    border-color: var(--primary);
+    box-shadow: none;
+    transform: none;
+}
+
+.browser-manager-card .btn-outline-danger {
+    color: #ef4444;
+    border-color: var(--border2);
+    background: var(--glass-strong);
+}
+
+.browser-manager-card .btn-outline-danger:hover {
+    color: #ef4444;
+    background: rgba(239,68,68,0.1);
+    border-color: #ef4444;
+    box-shadow: none;
+    transform: none;
 }
 
 .browser-icon-container {
