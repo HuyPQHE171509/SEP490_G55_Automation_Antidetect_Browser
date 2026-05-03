@@ -165,7 +165,7 @@ function ProxyPickerPopup({ profile, isRunning = false, onClose, onSaved }) {
 
 // Common SVG Icons
 const ChromiumIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="10" />
     <circle cx="12" cy="12" r="4" />
     <line x1="21.17" y1="8" x2="12" y2="8" />
@@ -175,19 +175,19 @@ const ChromiumIcon = () => (
 );
 
 const AppleIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none">
     <path d="M12 2.04C10.5 2.04 9 3.54 9 5c1.5 0 3-1.5 3-2.96zm1.2 19.33c-.71.55-1.55.84-3.2.84-1.65 0-2.49-.29-3.2-.84-2.1-1.65-4.8-6.15-4.8-10.35 0-3.3 2.1-5.1 4.5-5.1 1.2 0 2.4.6 3.3 1.2.9-.6 2.1-1.2 3.3-1.2 2.4 0 4.5 1.8 4.5 5.1 0 4.2-2.7 8.7-4.8 10.35z"/>
   </svg>
 );
 
 const FoxIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ea580c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ea580c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M22 6s-2-2-5-2-4 2-4 2-2-2-4-2-5 2-5 2l1.6 4.8c0 0-1.6 3.2-1.6 6.4 0 3.2 2.4 4.8 4 4.8s4-2 6-2 4.4 2 6 2 4-1.6 4-4.8c0-3.2-1.6-6.4-1.6-6.4L22 6z"/>
   </svg>
 );
 
 const MonitorIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
     <line x1="8" y1="21" x2="16" y2="21" />
     <line x1="12" y1="17" x2="12" y2="21" />
@@ -460,11 +460,11 @@ export default function ProfileList({
 
                 {/* "P" Avatar */}
                 <div style={{
-                  width: '36px', height: '36px', borderRadius: '8px', flexShrink: 0,
+                  width: '30px', height: '30px', borderRadius: '7px', flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   background: isCamoufox ? 'rgba(168,85,247,0.85)' : isFirefox ? 'rgba(234,88,12,0.85)' : 'rgba(37,99,235,0.85)',
-                  color: '#fff', fontWeight: 700, fontSize: '0.95rem', letterSpacing: '-0.5px',
-                  boxShadow: `0 2px 8px ${isCamoufox ? 'rgba(168,85,247,0.3)' : isFirefox ? 'rgba(234,88,12,0.3)' : 'rgba(37,99,235,0.3)'}`,
+                  color: '#fff', fontWeight: 700, fontSize: '0.82rem', letterSpacing: '-0.5px',
+                  boxShadow: `0 2px 6px ${isCamoufox ? 'rgba(168,85,247,0.3)' : isFirefox ? 'rgba(234,88,12,0.3)' : 'rgba(37,99,235,0.3)'}`,
                 }}>
                   P
                 </div>
@@ -488,18 +488,18 @@ export default function ProfileList({
                         }).catch(() => {});
                       }}
                       style={{
-                        fontSize: '0.7rem', color: 'var(--muted)', fontFamily: 'monospace',
+                        fontSize: '0.6rem', color: 'var(--muted)', fontFamily: 'monospace',
                         background: 'var(--glass)', border: '1px solid var(--border2)',
-                        borderRadius: '4px', padding: '2px 6px', cursor: 'pointer',
+                        borderRadius: '3px', padding: '1px 4px', cursor: 'pointer',
                         userSelect: 'none', letterSpacing: '0.03em', flexShrink: 0,
                         transition: 'color 0.15s, background 0.15s',
-                        display: 'flex', alignItems: 'center', gap: '4px'
+                        display: 'flex', alignItems: 'center', gap: '3px'
                       }}
                       onMouseEnter={e => { e.currentTarget.style.color = 'var(--fg)'; e.currentTarget.style.background = 'var(--card2)'; }}
                       onMouseLeave={e => { e.currentTarget.style.color = 'var(--muted)'; e.currentTarget.style.background = 'var(--glass)'; }}
                     >
                       <span>{shortId(profile.id)}</span>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                       </svg>
@@ -508,7 +508,7 @@ export default function ProfileList({
                     {/* Engine badge: CR / FF */}
                     <span style={{
                       display: 'inline-flex', alignItems: 'center',
-                      padding: '1px 7px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700,
+                      padding: '1px 5px', borderRadius: '3px', fontSize: '0.6rem', fontWeight: 700,
                       background: isCamoufox ? 'rgba(168,85,247,0.15)' : isFirefox ? 'rgba(234,88,12,0.15)' : 'rgba(37,99,235,0.15)',
                       color: isCamoufox ? '#c084fc' : isFirefox ? '#fb923c' : '#60a5fa',
                       border: `1px solid ${isCamoufox ? 'rgba(168,85,247,0.35)' : isFirefox ? 'rgba(234,88,12,0.35)' : 'rgba(37,99,235,0.35)'}`,
@@ -517,14 +517,7 @@ export default function ProfileList({
                       {isCamoufox ? 'CF' : isFirefox ? 'FF' : 'CR'}
                     </span>
 
-                    {isRunning && <span className="pl-status-label pl-status-running">Running</span>}
-                    {isStarting && <span className="pl-status-label pl-status-starting">Starting...</span>}
-                    {isStopping && <span className="pl-status-label pl-status-starting">Stopping...</span>}
-                    {hasError && <span className="pl-status-label pl-status-error">Error</span>}
-                  </div>
-
-                  {/* Row 2: OS + browser + resolution tags */}
-                  <div className="pl-tags" style={{ marginBottom: '4px' }}>
+                    {/* OS / browser / resolution — same line as name */}
                     <span className="pl-tag">
                       {osInfo.icon && <span className="pl-tag-icon">{osInfo.icon}</span>}
                       {osInfo.label}
@@ -537,11 +530,16 @@ export default function ProfileList({
                       <span className="pl-tag-icon"><MonitorIcon /></span>
                       {res}
                     </span>
+                    {isRunning && <span className="pl-status-label pl-status-running">Running</span>}
+                    {isStarting && <span className="pl-status-label pl-status-starting">Starting...</span>}
+                    {isStopping && <span className="pl-status-label pl-status-starting">Stopping...</span>}
+                    {hasError && <span className="pl-status-label pl-status-error">Error</span>}
                   </div>
 
-                  {/* Row 2b: Proxy (only if set) */}
+
+                  {/* Proxy (only if set) */}
                   {hasProxy && (
-                    <div style={{ marginBottom: '4px' }}>
+                    <div style={{ marginBottom: '2px' }}>
                       <span className="pl-tag" style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--fg)', border: '1px solid rgba(99,102,241,0.25)', maxWidth: '100%' }}>
                         <span className="pl-tag-icon"><LinkIcon /></span>
                         <span style={{ color: '#818cf8', fontWeight: 700, flexShrink: 0 }}>{proxyType}</span>
@@ -550,8 +548,8 @@ export default function ProfileList({
                     </div>
                   )}
 
-                  {/* Row 3: Fingerprint section badges */}
-                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                  {/* Row 2: Fingerprint section badges */}
+                  <div style={{ display: 'flex', gap: '2px', flexWrap: 'wrap' }}>
                     {BADGE_MAP.map(({ key, label, section, title }) => {
                       const isEnabled = !!profile?.settings?.[section]?.enabled;
                       const isWarn = key === 'DSP' && isEnabled;
@@ -594,12 +592,12 @@ export default function ProfileList({
                     </>
                   ) : (
                     <>
-                      <button className="pl-btn pl-btn-launch" onClick={() => onToggleProfile(profile.id)} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                      <button className="pl-btn pl-btn-launch" onClick={() => onToggleProfile(profile.id)} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                         Launch
                       </button>
-                      <button className="pl-btn pl-btn-headless" onClick={() => onLaunchHeadless(profile.id)} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                      <button className="pl-btn pl-btn-headless" onClick={() => onLaunchHeadless(profile.id)} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                         Headless
                       </button>
                     </>
@@ -608,33 +606,33 @@ export default function ProfileList({
                     title="Proxy"
                     onClick={() => setProxyPickerProfile({ profile, isRunning })}
                     disabled={isTransitioning}
-                    style={{ width: '30px', height: '30px', border: '1px solid #d1d5db', borderRadius: '6px', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6366f1', opacity: isTransitioning ? 0.4 : 1 }}
+                    style={{ width: '26px', height: '26px', border: '1px solid #d1d5db', borderRadius: '5px', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6366f1', opacity: isTransitioning ? 0.4 : 1 }}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                   </button>
                   <button
                     title="Clone"
                     onClick={() => onCloneProfile(profile.id)}
                     disabled={isTransitioning}
-                    style={{ width: '30px', height: '30px', border: '1px solid #d1d5db', borderRadius: '6px', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6', opacity: isTransitioning ? 0.4 : 1 }}
+                    style={{ width: '26px', height: '26px', border: '1px solid #d1d5db', borderRadius: '5px', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6', opacity: isTransitioning ? 0.4 : 1 }}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                   </button>
                   <button
                     title="Edit"
                     onClick={() => onEditProfile(profile)}
                     disabled={isTransitioning}
-                    style={{ width: '30px', height: '30px', border: '1px solid #d1d5db', borderRadius: '6px', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f59e0b', opacity: isTransitioning ? 0.4 : 1 }}
+                    style={{ width: '26px', height: '26px', border: '1px solid #d1d5db', borderRadius: '5px', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f59e0b', opacity: isTransitioning ? 0.4 : 1 }}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                   </button>
                   <button
                     title="Delete"
                     onClick={() => onDeleteProfile(profile.id)}
                     disabled={isRunning || isTransitioning}
-                    style={{ width: '30px', height: '30px', border: '1px solid #fca5a5', borderRadius: '6px', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', opacity: (isRunning || isTransitioning) ? 0.4 : 1 }}
+                    style={{ width: '26px', height: '26px', border: '1px solid #fca5a5', borderRadius: '5px', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', opacity: (isRunning || isTransitioning) ? 0.4 : 1 }}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
                   </button>
                 </div>
               </div>

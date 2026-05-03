@@ -43,7 +43,7 @@
 .pl-cards {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.24rem;
   flex: 1;
   overflow-y: auto;
   min-height: 0;
@@ -61,11 +61,11 @@
 .pl-card {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.75rem;
   background: var(--card2);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.9rem 1.2rem;
+  border-radius: 8px;
+  padding: 0.42rem 1rem;
   transition: border-color 0.15s, background 0.15s;
 }
 
@@ -120,8 +120,9 @@
 .pl-name-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.35rem;
+  gap: 0.4rem;
+  margin-bottom: 0.12rem;
+  flex-wrap: wrap;
 }
 
 .pl-id {
@@ -134,7 +135,7 @@
 }
 
 .pl-name {
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   font-weight: 600;
   color: var(--fg);
 }
@@ -148,10 +149,10 @@
 .pl-tag {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.72rem;
+  gap: 0.15rem;
+  padding: 0.04rem 0.25rem;
+  border-radius: 3px;
+  font-size: 0.61rem;
   font-weight: 500;
   background: var(--glass-strong);
   color: var(--fg);
@@ -159,21 +160,21 @@
 }
 
 .pl-tag-icon {
-  font-size: 0.68rem;
+  font-size: 0.62rem;
 }
 
 /* Action buttons */
 .pl-actions {
   display: flex;
-  gap: 0.35rem;
+  gap: 0.25rem;
   flex-shrink: 0;
 }
 
 .pl-btn {
-  padding: 0.32rem 0.75rem;
+  padding: 0.2rem 0.5rem;
   border: none;
   border-radius: 4px;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
   color: #fff;
@@ -201,9 +202,9 @@
 
 /* Fingerprint section toggle badges */
 .pl-fp-badge {
-  font-size: 0.6rem;
+  font-size: 0.53rem;
   font-weight: 700;
-  padding: 2px 6px;
+  padding: 1px 4px;
   border-radius: 3px;
   text-transform: uppercase;
   cursor: pointer;
