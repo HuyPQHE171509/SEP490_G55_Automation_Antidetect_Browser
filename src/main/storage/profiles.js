@@ -169,6 +169,20 @@ function normalizeProfileInput(input = {}, existing = null) {
   if (!settings.engine || settings.engine === 'auto' || settings.engine === 'cdp') {
     settings.engine = 'playwright';
   }
+  // Sync windowWidth/windowHeight from fingerprint.screenResolution for new profiles
+  // only when the caller did not explicitly provide window dimensions
+  if (isNewProfile && fingerprint.screenResolution && !input.settings?.windowWidth && !input.settings?.windowHeight) {
+    const parts = fingerprint.screenResolution.split('x');
+    if (parts.length === 2) {
+      const w = parseInt(parts[0], 10);
+      const h = parseInt(parts[1], 10);
+      if (w > 0 && h > 0) {
+        settings.windowWidth = w;
+        settings.windowHeight = h;
+      }
+    }
+  }
+
   const automation = deepMerge(DEFAULT_AUTOMATION, deepMerge(base.automation || {}, input.automation || {}));
   const active = (input.active != null) ? !!input.active : (base.active != null ? !!base.active : true);
   const id = input.id || base.id;
@@ -308,11 +322,19 @@ async function saveProfileInternal(profile) {
         }
         profiles[idx] = { ...profiles[idx], ...merged, updatedAt: nowIso };
       } else {
+        const licensed = isLicenseActivated();
+        if (!licensed && profiles.length >= 5) {
+          return { success: false, error: 'Free plan is limited to a maximum of 5 profiles. Please activate a license.' };
+        }
         const prepared = normalizeProfileInput(profile, null);
         prepared.name = makeUniqueName(prepared.name, profiles, prepared.id);
         profiles.push({ ...prepared, createdAt: nowIso });
       }
     } else {
+      const licensed = isLicenseActivated();
+      if (!licensed && profiles.length >= 5) {
+        return { success: false, error: 'Free plan is limited to a maximum of 5 profiles. Please activate a license.' };
+      }
       let newId = generateShortId();
       // Ensure uniqueness just in case
       const existingIds = new Set((profiles || []).map(p => p.id));

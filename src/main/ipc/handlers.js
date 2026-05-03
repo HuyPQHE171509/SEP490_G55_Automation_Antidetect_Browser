@@ -38,7 +38,7 @@ const {
   importProxiesInternal, exportProxiesInternal,
 } = require('../storage/proxies');
 const { checkProxy, checkProxiesBatch } = require('../services/ProxyChecker');
-const { getMachineCode, validateLicenseKey } = require('../services/machineId');
+const { getMachineCode, validateLicenseKey, deactivateLicense } = require('../services/machineId');
 const { checkBrowserStatus, installBrowser, uninstallBrowser, reinstallBrowser } = require('../services/browserManagerService');
 
 function registerIpcHandlers(extra = {}) {
@@ -51,6 +51,7 @@ function registerIpcHandlers(extra = {}) {
   // Quản lý Mã máy (Machine Code) & Giấy phép (License)
   handle('get-machine-code', () => getMachineCode());
   handle('validate-license', (_e, key) => validateLicenseKey(key));
+  handle('deactivate-license', () => deactivateLicense());
 
   // Quản lý Môi trường chạy Trình duyệt (Browser Runtime Manager)
   handle('browser-runtime-status', async (_e, name) => checkBrowserStatus(name));
@@ -364,8 +365,13 @@ function registerIpcHandlers(extra = {}) {
 
   // Hỗ trợ xuất Audit Log (Ethical Rule UC_11.03)
   handle('system-export-audit', async () => {
-    appendLog('system', 'System Audit Log exported by user.');
-    return { success: true, content: getAuditLogContent() };
+    const result = getAuditLogContent();
+    if (result.success) {
+      appendLog('system', 'System Audit Log exported by user.');
+    } else {
+      appendLog('system', `System Audit Log export blocked: ${result.error}`);
+    }
+    return result;
   });
 
   // Quản lý thư viện bổ sung cho Kịch bản (NPM Packages / Script modules)

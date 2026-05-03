@@ -41,20 +41,38 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
   // Safe mode: only run block 0 (webdriver + CDP cleanup).
   // All Object.defineProperty overrides on native prototypes are detected
   // by Cloudflare enterprise, so we skip them in safe mode.
-  const applyHardware = !safeMode && apply.hardware !== false;
-  const applyNavigator = !safeMode && apply.navigator !== false;
-  const applyUA = !safeMode && apply.userAgent !== false;
-  const applyWebgl = !safeMode && apply.webgl !== false;
-  const applyLang = !safeMode && apply.language !== false;
-  const applyViewport = !safeMode && apply.viewport !== false;
-  const applyCanvas = !safeMode && apply.canvas !== false;
-  const applyAudio = !safeMode && apply.audio !== false;
+  // All sections are strict opt-in (=== true).
+  // Old profiles without section settings get no injection (backward compatible).
+  // New profiles: each section only injects when its UI toggle is explicitly ON.
+  const identitySectionEnabled = settings?.identity?.enabled === true;
+  const hwSectionEnabled       = settings?.hardware?.enabled === true;
+  const webglSectionEnabled    = settings?.webgl?.enabled    === true;
+  const displaySectionEnabled  = settings?.display?.enabled  === true;
+  const canvasSectionEnabled   = settings?.canvas?.enabled   === true;
+  const audioSectionEnabled    = settings?.audio?.enabled    === true;
+
+  const applyHardware = !safeMode && apply.hardware !== false && hwSectionEnabled;
+  const applyNavigator = !safeMode && apply.navigator !== false && identitySectionEnabled;
+  const applyUA = !safeMode && apply.userAgent !== false && identitySectionEnabled;
+  const applyWebgl = !safeMode && apply.webgl !== false && webglSectionEnabled;
+  const applyLang = !safeMode && apply.language !== false && identitySectionEnabled;
+  const applyViewport = !safeMode && apply.viewport !== false && displaySectionEnabled;
+  // Canvas: inject only when toggle explicitly ON
+  const applyCanvas = !safeMode && apply.canvas !== false && fp.canvas !== false && canvasSectionEnabled;
+  // Audio: inject only when toggle explicitly ON
+  const applyAudio = !safeMode && apply.audio !== false && fp.audio !== false && audioSectionEnabled;
   // Always run anti-automation cleanup regardless of safeMode — removing webdriver/CDP artifacts
   // is safe and necessary. Can be disabled only via explicit applyOverrides.antiDetection=false.
   const applyAntiDetection = apply.antiDetection !== false;
 
   // Generate a stable per-profile seed for consistent noise
   const profileSeed = hashCode(profile?.id || 'default');
+  // Canvas seed: use fingerprint.canvasNoise (set by UI) for unique per-profile noise
+  const canvasSeed = (fp.canvasNoise && Number(fp.canvasNoise) > 0) ? Number(fp.canvasNoise) : profileSeed;
+  // Canvas intensity: 1 = very sparse (1/400 pixels), 10 = denser (1/40 pixels)
+  const canvasIntensity = Math.max(1, Math.min(10, Number(fp.canvasNoiseIntensity) || 1));
+  // Audio seed: use fingerprint.audioNoise (set by UI) for unique per-profile noise
+  const audioSeed = (fp.audioNoise && Number(fp.audioNoise) > 0) ? Number(fp.audioNoise) : profileSeed;
 
   // ═══════════════════════════════════════════════════════════════════════
   // 0. ANTI-AUTOMATION DETECTION (must run FIRST, before anything else)
@@ -65,26 +83,32 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
     await context.addInitScript(() => {
       try {
         // ── navigator.webdriver ──
-        // Real Chrome: navigator.webdriver === false (not undefined, not true).
-        // Playwright/CDP set it to true. We must make it false to match real Chrome.
-        // Also must survive Object.getOwnPropertyDescriptor checks.
-        const proto = Object.getPrototypeOf(navigator);
-        if (proto) {
-          try {
-            delete proto.webdriver;
-            Object.defineProperty(proto, 'webdriver', {
-              get: () => false,
-              configurable: true,
-              enumerable: true,
-            });
-          } catch {}
-        }
+        // Only override if Playwright/CDP actually set it to true.
+        // If --disable-blink-features=AutomationControlled already made it false/undefined,
+        // we skip the Object.defineProperty entirely — Cloudflare detects tampered descriptors
+        // even when the returned value is correct.
         try {
-          Object.defineProperty(navigator, 'webdriver', {
-            get: () => false,
-            configurable: true,
-            enumerable: true,
-          });
+          const wd = navigator.webdriver;
+          if (wd === true) {
+            const proto = Object.getPrototypeOf(navigator);
+            if (proto) {
+              try {
+                delete proto.webdriver;
+                Object.defineProperty(proto, 'webdriver', {
+                  get: () => false,
+                  configurable: true,
+                  enumerable: true,
+                });
+              } catch {}
+            }
+            try {
+              Object.defineProperty(navigator, 'webdriver', {
+                get: () => false,
+                configurable: true,
+                enumerable: true,
+              });
+            } catch {}
+          }
         } catch {}
 
         // ── Remove Playwright/CDP artifacts ──
@@ -489,7 +513,7 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
   // ═══════════════════════════════════════════════════════════════════════
   if (applyCanvas) {
     try {
-      await context.addInitScript(({ seed }) => {
+      await context.addInitScript(({ seed, intensity }) => {
         try {
           // Seeded PRNG — deterministic per profile
           function mulberry32(a) {
@@ -502,11 +526,12 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
           }
           const rng = mulberry32(seed);
 
-          // ── Noise function (subtle ±1 on sparse pixels) ──
+          // ── Noise function: intensity 1=sparse(1/400px), 10=denser(1/40px) ──
           function perturbImageData(imageData) {
             const data = imageData.data;
             const len = data.length;
-            const step = Math.max(4, Math.floor(len / 400) * 4);
+            const divisor = Math.max(40, 400 - (intensity - 1) * 40);
+            const step = Math.max(4, Math.floor(len / divisor) * 4);
             for (let i = 0; i < len; i += step) {
               for (let c = 0; c < 3; c++) {
                 const noise = rng() < 0.5 ? -1 : 1;
@@ -596,7 +621,7 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
             });
           }
         } catch {}
-      }, { seed: profileSeed });
+      }, { seed: canvasSeed, intensity: canvasIntensity });
     } catch {}
   }
 
@@ -636,7 +661,7 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
           }
 
           if (typeof AnalyserNode !== 'undefined') {
-            const rng = mulberry32(seed + 9001);
+            const rng = mulberry32(seed ^ 9001);
 
             const origGFFD = AnalyserNode.prototype.getFloatFrequencyData;
             Object.defineProperty(AnalyserNode.prototype, 'getFloatFrequencyData', {
@@ -666,7 +691,7 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
           // Spoof AudioContext.sampleRate — headless Chrome luôn là 44100,
           // real hardware thường 48000. Seed quyết định mỗi profile ra giá trị nào.
           if (typeof AudioContext !== 'undefined') {
-            const rng2 = mulberry32(seed + 9002);
+            const rng2 = mulberry32(seed ^ 9002);
             const spoofRate = rng2() > 0.5 ? 48000 : 44100;
             const OrigAC = window.AudioContext;
             const OrigOAC = window.OfflineAudioContext;
@@ -690,7 +715,7 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
             }
           }
         } catch {}
-      }, { seed: profileSeed });
+      }, { seed: audioSeed });
     } catch {}
   }
 

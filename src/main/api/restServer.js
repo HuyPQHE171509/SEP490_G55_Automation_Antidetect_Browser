@@ -211,7 +211,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
         return reply.code(403).send({
           success: false,
           error:
-            "Free plan giới hạn tối đa 5 profiles. Vui lòng kích hoạt license để tạo thêm.",
+            "Free plan is limited to a maximum of 5 profiles. Please activate a license.",
         });
       }
 
@@ -788,7 +788,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
   appx.post("/api/browsers/:profileId/actions/type", mapAction("input.type"));
   appx.post(
     "/api/browsers/:profileId/actions/press-key",
-    mapAction("keyboard.send"),
+    mapAction("keyboard.pressKey"),
   );
   appx.post(
     "/api/browsers/:profileId/actions/select-option",
@@ -799,7 +799,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
   appx.post("/api/browsers/:profileId/actions/check", mapAction("input.check"));
   appx.post(
     "/api/browsers/:profileId/actions/scroll",
-    mapAction("scroll.elementToElement"),
+    mapAction("page.scroll"),
   );
   appx.post("/api/browsers/:profileId/actions/tap", mapAction("click.tap"));
   appx.post(

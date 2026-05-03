@@ -89,3 +89,21 @@ function validateLicenseKey(inputKey) {
 }
 
 module.exports = { getMachineCode, deriveLicenseKey, validateLicenseKey };
+
+function deactivateLicense() {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const { app } = require('electron');
+    const licensePath = path.join(app.getPath('userData'), 'license.json');
+    if (fs.existsSync(licensePath)) {
+      fs.unlinkSync(licensePath);
+    }
+    return { success: true };
+  } catch (err) {
+    console.error('Failed to deactivate license:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+module.exports = { getMachineCode, deriveLicenseKey, validateLicenseKey, deactivateLicense };

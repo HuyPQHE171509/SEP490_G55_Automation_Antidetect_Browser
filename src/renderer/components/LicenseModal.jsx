@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { getCheckoutUrl } from '../config/app.config';
+import { useI18n } from '../i18n/index';
 
 const LICENSE_KEY = 'hl-license-activated';
 
 export default function LicenseModal({ onClose, onActivated }) {
+    const { t } = useI18n();
     const [licenseKey, setLicenseKey] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
@@ -11,7 +13,7 @@ export default function LicenseModal({ onClose, onActivated }) {
     const handleActivate = async () => {
         const key = licenseKey.trim();
         if (!key) {
-            setError('Vui lòng nhập license key.');
+            setError(t('license.error.empty', 'Please enter a license key.'));
             return;
         }
         setLoading(true);
@@ -22,10 +24,10 @@ export default function LicenseModal({ onClose, onActivated }) {
                 localStorage.setItem(LICENSE_KEY, key);
                 onActivated?.(result);
             } else {
-                setError('License key không hợp lệ với máy này.');
+                setError(t('license.error.invalid', 'Invalid license key for this machine.'));
             }
         } catch {
-            setError('Đã xảy ra lỗi. Thử lại sau.');
+            setError(t('license.error.system', 'An error occurred. Please try again later.'));
         } finally {
             setLoading(false);
         }
@@ -39,10 +41,10 @@ export default function LicenseModal({ onClose, onActivated }) {
         <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4">
             <div className="bg-[var(--card)] border border-[var(--border)] rounded-[1.25rem] shadow-2xl w-full max-w-[460px] p-8 relative flex flex-col items-stretch">
                 <h2 className="text-[1.4rem] font-bold text-[var(--fg)] mb-2">
-                    Bắt đầu sử dụng
+                    {t('license.getStarted', 'Get Started')}
                 </h2>
                 <p className="text-[0.95rem] text-[var(--muted)] mb-6 font-medium">
-                    Dùng <strong className="font-semibold text-[var(--fg)]">Free</strong> (tối đa 5 profiles) hoặc nhập key PRO để mở khóa toàn bộ tính năng.
+                    Use <strong className="font-semibold text-[var(--fg)]">Free</strong> (max 5 profiles) or enter a PRO key to unlock all features.
                 </p>
 
                 {/* Upgrade to Pro button */}
@@ -50,12 +52,12 @@ export default function LicenseModal({ onClose, onActivated }) {
                     onClick={() => window.electronAPI.openExternal(getCheckoutUrl())}
                     className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[var(--primary)] to-purple-500 hover:brightness-110 text-white font-bold py-3 rounded-[0.6rem] mb-4 shadow-md transition text-[0.95rem]"
                 >
-                    ⚡ Mua Pro License →
+                    {t('license.buyPro', '⚡ Buy Pro License →')}
                 </button>
 
                 <div className="flex items-center gap-2 mb-4">
                     <div className="flex-1 h-px bg-[var(--border)]" />
-                    <span className="text-[0.75rem] text-[var(--muted)]">hoặc nhập key đã mua</span>
+                    <span className="text-[0.75rem] text-[var(--muted)]">{t('license.orEnterKey', 'or enter purchased key')}</span>
                     <div className="flex-1 h-px bg-[var(--border)]" />
                 </div>
 
@@ -84,7 +86,7 @@ export default function LicenseModal({ onClose, onActivated }) {
                     disabled={loading}
                     className="w-full bg-[var(--primary)] hover:brightness-110 text-white font-semibold py-2.5 rounded-[0.45rem] mt-1 shadow-sm transition disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                    {loading ? 'Đang kiểm tra...' : 'Kích hoạt License'}
+                    {loading ? t('license.checking', 'Checking...') : t('license.activateBtn', 'Activate License')}
                 </button>
 
                 <button
@@ -92,7 +94,7 @@ export default function LicenseModal({ onClose, onActivated }) {
                     disabled={loading}
                     className="w-full bg-transparent hover:bg-[var(--glass-strong)] text-[var(--muted)] font-medium py-2.5 rounded-[0.45rem] mt-3 border border-[var(--border)] transition disabled:opacity-60 cursor-pointer text-[0.85rem]"
                 >
-                    Tiếp tục dùng Free (5 profiles)
+                    {t('license.continueFree', 'Continue Free (5 profiles)')}
                 </button>
             </div>
         </div>

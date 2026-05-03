@@ -1,0 +1,232 @@
+[
+  {
+    "id": "H5OU8G",
+    "name": "Bulk",
+    "description": "",
+    "startUrl": "https://www.google.com/",
+    "active": true,
+    "fingerprint": {
+      "os": "macOS",
+      "browser": "Chrome",
+      "browserVersion": "146.0.7680.165",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.7680.165 Safari/537.36",
+      "language": "en-US",
+      "screenResolution": "1440x900",
+      "timezone": "America/Chicago",
+      "webgl": true,
+      "canvas": true,
+      "audio": true
+    },
+    "settings": {
+      "cpuCores": 2,
+      "memoryGB": 8,
+      "language": "en-US",
+      "timezone": "America/Chicago",
+      "advanced": {
+        "platform": "MacIntel",
+        "dnt": false,
+        "devicePixelRatio": 1,
+        "maxTouchPoints": 0,
+        "webglVendor": "Google Inc. (Apple)",
+        "webglRenderer": "ANGLE (Apple, Apple M1, OpenGL 4.1)",
+        "plugins": 5,
+        "languages": "en-US,en"
+      },
+      "engine": "playwright"
+    },
+    "automation": {
+      "enabled": false,
+      "runOnLaunch": false,
+      "steps": [],
+      "schedule": {
+        "enabled": false,
+        "cron": ""
+      }
+    },
+    "createdAt": "2026-04-30T13:49:29.901Z"
+  },
+  {
+    "id": "2HRb2E",
+    "name": "Bulk (2)",
+    "description": "",
+    "startUrl": "https://www.google.com/",
+    "active": true,
+    "fingerprint": {
+      "os": "Windows",
+      "browser": "Chrome",
+      "browserVersion": "142.0.7450.190",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.7450.190 Safari/537.36",
+      "language": "fr-FR",
+      "screenResolution": "2560x1600",
+      "timezone": "Europe/Paris",
+      "webgl": true,
+      "canvas": true,
+      "audio": true
+    },
+    "settings": {
+      "cpuCores": 4,
+      "memoryGB": 4,
+      "language": "fr-FR",
+      "timezone": "Europe/Paris",
+      "advanced": {
+        "platform": "Win32",
+        "dnt": false,
+        "devicePixelRatio": 1,
+        "maxTouchPoints": 0,
+        "webglVendor": "Google Inc. (AMD)",
+        "webglRenderer": "ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "plugins": 5,
+        "languages": "fr-FR,fr"
+      },
+      "engine": "playwright"
+    },
+    "automation": {
+      "enabled": false,
+      "runOnLaunch": false,
+      "steps": [],
+      "schedule": {
+        "enabled": false,
+        "cron": ""
+      }
+    },
+    "createdAt": "2026-04-30T13:49:29.901Z"
+  },
+  {
+    "id": "MOHs2t",
+    "name": "Bulk (3)",
+    "description": "",
+    "startUrl": "https://www.google.com/",
+    "active": true,
+    "fingerprint": {
+      "os": "Windows",
+      "browser": "Chrome",
+      "browserVersion": "146.0.7680.165",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.7680.165 Safari/537.36",
+      "language": "fr-FR",
+      "screenResolution": "1920x1080",
+      "timezone": "Europe/Paris",
+      "webgl": true,
+      "canvas": true,
+      "audio": true
+    },
+    "settings": {
+      "cpuCores": 8,
+      "memoryGB": 8,
+      "language": "fr-FR",
+      "timezone": "Europe/Paris",
+      "advanced": {
+        "platform": "Win32",
+        "dnt": false,
+        "devicePixelRatio": 3,
+        "maxTouchPoints": 0,
+        "webglVendor": "Google Inc. (Intel)",
+        "webglRenderer": "ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "plugins": 5,
+        "languages": "fr-FR,fr"
+      },
+      "engine": "playwright"
+    },
+    "automation": {
+      "enabled": false,
+      "runOnLaunch": false,
+      "steps": [],
+      "schedule": {
+        "enabled": false,
+        "cron": ""
+      }
+    },
+    "createdAt": "2026-04-30T13:49:29.901Z"
+  },
+  {
+    "id": "pTd2Sk",
+    "name": "Bulk (4)",
+    "description": "",
+    "startUrl": "https://www.google.com/",
+    "active": true,
+    "fingerprint": {
+      "os": "macOS",
+      "browser": "Chrome",
+      "browserVersion": "143.0.7472.155",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.7472.155 Safari/537.36",
+      "language": "en-US",
+      "screenResolution": "2560x1440",
+      "timezone": "America/New_York",
+      "webgl": true,
+      "canvas": true,
+      "audio": true
+    },
+    "settings": {
+      "cpuCores": 4,
+      "memoryGB": 16,
+      "language": "en-US",
+      "timezone": "America/New_York",
+      "advanced": {
+        "platform": "MacIntel",
+        "dnt": false,
+        "devicePixelRatio": 1.25,
+        "maxTouchPoints": 0,
+        "webglVendor": "Google Inc. (Apple)",
+        "webglRenderer": "ANGLE (Apple, Apple M2, OpenGL 4.1)",
+        "plugins": 5,
+        "languages": "en-US,en"
+      },
+      "engine": "playwright"
+    },
+    "automation": {
+      "enabled": false,
+      "runOnLaunch": false,
+      "steps": [],
+      "schedule": {
+        "enabled": false,
+        "cron": ""
+      }
+    },
+    "createdAt": "2026-04-30T13:49:29.901Z"
+  },
+  {
+    "id": "12bBnD",
+    "name": "Bulk (5)",
+    "description": "",
+    "startUrl": "https://www.google.com/",
+    "active": true,
+    "fingerprint": {
+      "os": "macOS",
+      "browser": "Chrome",
+      "browserVersion": "146.0.7680.165",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.7680.165 Safari/537.36",
+      "language": "en-US",
+      "screenResolution": "1920x1080",
+      "timezone": "America/New_York",
+      "webgl": true,
+      "canvas": true,
+      "audio": true
+    },
+    "settings": {
+      "cpuCores": 6,
+      "memoryGB": 4,
+      "language": "en-US",
+      "timezone": "America/New_York",
+      "advanced": {
+        "platform": "MacIntel",
+        "dnt": false,
+        "devicePixelRatio": 2,
+        "maxTouchPoints": 0,
+        "webglVendor": "Google Inc. (Apple)",
+        "webglRenderer": "ANGLE (Apple, Apple M1, OpenGL 4.1)",
+        "plugins": 5,
+        "languages": "en-US,en"
+      },
+      "engine": "playwright"
+    },
+    "automation": {
+      "enabled": false,
+      "runOnLaunch": false,
+      "steps": [],
+      "schedule": {
+        "enabled": false,
+        "cron": ""
+      }
+    },
+    "createdAt": "2026-04-30T13:49:29.901Z"
+  }
+]

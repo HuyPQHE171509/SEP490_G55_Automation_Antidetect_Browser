@@ -87,6 +87,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Machine License
   getMachineCode: () => ipcRenderer.invoke('get-machine-code'),
   validateLicense: (key) => ipcRenderer.invoke('validate-license', key),
+  deactivateLicense: () => ipcRenderer.invoke('deactivate-license'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
   // Scripts
@@ -159,4 +160,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startPreview: (profileId) => ipcRenderer.invoke('start-preview', profileId),
   stopPreview: (profileId) => ipcRenderer.invoke('stop-preview', profileId),
   getScreencastStatus: (profileId) => ipcRenderer.invoke('screencast-status', profileId),
+
+  // Audit Log (Ethical Compliance)
+  exportAuditLog: () => ipcRenderer.invoke('system-export-audit'),
 });

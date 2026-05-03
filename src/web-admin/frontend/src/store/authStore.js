@@ -8,6 +8,7 @@ import {
   resetPassword,
   firebaseSignOut,
   onAuthStateChanged,
+  syncUserToFirestore,
   auth,
 } from '../services/firebase';
 
@@ -41,6 +42,8 @@ export const useAuthStore = create(
             import('../services/firebase').then(({ normaliseUser }) => {
               const user = normaliseUser(firebaseUser);
               set({ user, isAuthenticated: true, loading: false });
+              // Sync to Firestore so admin rules can resolve role
+              syncUserToFirestore(firebaseUser);
               // Kiểm tra trạng thái Pro ngay sau khi đăng nhập
               get().checkProStatus(user.email);
             });

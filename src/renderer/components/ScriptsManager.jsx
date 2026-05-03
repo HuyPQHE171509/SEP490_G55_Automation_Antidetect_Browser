@@ -79,13 +79,15 @@ const API_REF = [
 const totalMethods = API_REF.reduce((s, c) => s + c.methods.length, 0);
 
 const CRON_PRESETS = [
-  { label: 'Every 5m', cron: '*/5 * * * *' },
+  { label: 'Every 30s', cron: '*/30 * * * * *' },
+  { label: 'Every 1m',  cron: '* * * * *' },
+  { label: 'Every 5m',  cron: '*/5 * * * *' },
   { label: 'Every 15m', cron: '*/15 * * * *' },
   { label: 'Every 30m', cron: '*/30 * * * *' },
-  { label: 'Hourly', cron: '0 * * * *' },
+  { label: 'Hourly',    cron: '0 * * * *' },
   { label: 'Daily 9am', cron: '0 9 * * *' },
-  { label: 'Midnight', cron: '0 0 * * *' },
-  { label: 'Mon 9am', cron: '0 9 * * 1' },
+  { label: 'Midnight',  cron: '0 0 * * *' },
+  { label: 'Mon 9am',   cron: '0 9 * * 1' },
 ];
 
 const MINUTE_OPTIONS = ['* (every)', '*/5', '*/10', '*/15', '*/30', '0', '15', '30', '45'];
@@ -96,9 +98,15 @@ const WEEKDAY_OPTIONS = ['* (every)', '0', '1', '2', '3', '4', '5', '6'];
 
 function describeCron(expr) {
   if (!expr) return '';
-  const parts = expr.split(' ');
+  const parts = expr.trim().split(' ');
+  if (parts.length === 6) {
+    const [sec] = parts;
+    if (sec.startsWith('*/')) return `Every ${sec.slice(2)} seconds`;
+    return expr;
+  }
   if (parts.length !== 5) return expr;
   const [min, hr, day, mon, wd] = parts;
+  if (min === '*' && hr === '*' && day === '*' && mon === '*' && wd === '*') return 'Every minute';
   if (min.startsWith('*/')) return `Every ${min.slice(2)} minutes`;
   if (min === '0' && hr === '*') return 'Every hour';
   if (min === '0' && hr === '0' && day === '*' && mon === '*' && wd === '*') return 'Every day at midnight';
@@ -169,6 +177,8 @@ function ScriptsTab({ profiles }) {
 
     // Browser mode
     const [browserMode, setBrowserMode] = useState('visible');
+    // Center panel tab: 'settings' | 'apiref'
+    const [settingsTab, setSettingsTab] = useState('settings');
 
     const load = useCallback(async () => {
         try {
@@ -186,9 +196,11 @@ function ScriptsTab({ profiles }) {
         setCronExpr(expr);
     }, [cronMinute, cronHour, cronDay, cronMonth, cronWeekday]);
 
-    const applyCronPreset = (cron) => {
-        setCronExpr(cron);
-        const [m, h, d, mo, w] = cron.split(' ');
+    const applyCronPreset = (cronStr) => {
+        setCronExpr(cronStr);
+        const parts = cronStr.trim().split(' ');
+        if (parts.length !== 5) return; // 6-field (seconds) — skip dropdown sync
+        const [m, h, d, mo, w] = parts;
         setCronMinute(m === '*' ? '* (every)' : m);
         setCronHour(h === '*' ? '* (every)' : h);
         setCronDay(d === '*' ? '* (every)' : d);
@@ -202,17 +214,18 @@ function ScriptsTab({ profiles }) {
         setRunResult(null);
         setScheduleEnabled(false);
         setBrowserMode('visible');
+        setSettingsTab('settings');
     };
 
     const handleSelect = (s) => {
         setEditing({ ...s });
         setSelectedId(s.id);
         setRunResult(null);
-        // Load schedule from script if exists
         setScheduleEnabled(!!s.schedule?.enabled);
         if (s.schedule?.cron) applyCronPreset(s.schedule.cron);
         if (s.schedule?.profileId) setScheduleProfileId(s.schedule.profileId);
         setBrowserMode(s.browserMode || 'visible');
+        setSettingsTab('settings');
     };
 
     const handleSave = async () => {
@@ -455,153 +468,141 @@ function ScriptsTab({ profiles }) {
 
             </div>
 
-            {/* ═══ Center Editor Area ═══ */}
-            <div className="flex-1 flex flex-col" style={{ background: 'var(--card)' }}>
-                {editing ? (
-                    <div className="flex flex-col h-full">
-                        {/* Header: Name, Description, Actions */}
-                        <div className="p-3 flex flex-col gap-2" style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)' }}>
-                            <div className="flex gap-3 items-center">
-                                <span className="text-[0.85rem] font-semibold" style={{ color: 'var(--fg)' }}>{editing.id ? 'Edit Script' : 'New Script'}</span>
-                                <div className="flex-1" />
+            {/* ═══ Center Settings Panel + Right Editor ═══ */}
+            {editing ? (
+                <>
+                    {/* Center: Settings / API Reference tabs */}
+                    <div className="w-[370px] shrink-0 flex flex-col" style={{ background: 'var(--card)', borderRight: '1px solid var(--border)' }}>
+                        {/* Header */}
+                        <div className="px-3 py-2 flex items-center justify-between" style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)' }}>
+                            <span className="text-[0.85rem] font-semibold" style={{ color: 'var(--fg)' }}>{editing.id ? 'Edit Script' : 'New Script'}</span>
+                            <div className="flex gap-2">
                                 <button className="btn btn-secondary text-[0.7rem]" onClick={() => { setEditing(null); setSelectedId(null); }}>Cancel</button>
                                 <button className="btn btn-success text-[0.7rem]" onClick={handleSave}>Save</button>
                             </div>
-                            <div className="flex gap-3">
-                                <div className="flex-1">
-                                    <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>Name</label>
-                                    <input className="w-full rounded px-2 py-1.5 text-[0.75rem]"
-                                        style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
-                                        value={editing.name} onChange={e => setEditing(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Login to site" />
-                                </div>
-                                <div className="flex-1">
-                                    <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>Description (optional)</label>
-                                    <input className="w-full rounded px-2 py-1.5 text-[0.75rem]"
-                                        style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
-                                        value={editing.description} onChange={e => setEditing(p => ({ ...p, description: e.target.value }))} placeholder="What does this script do?" />
-                                </div>
-                            </div>
+                        </div>
+                        {/* Tab bar */}
+                        <div className="flex" style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
+                            {[{ id: 'settings', label: 'SETTINGS' }, { id: 'apiref', label: 'API REFERENCE' }].map(t => (
+                                <button key={t.id}
+                                    className="px-4 py-2 text-[0.7rem] font-semibold tracking-wide transition"
+                                    style={{
+                                        color: settingsTab === t.id ? 'var(--primary)' : 'var(--muted)',
+                                        borderBottom: settingsTab === t.id ? '2px solid var(--primary)' : '2px solid transparent',
+                                        background: 'transparent',
+                                    }}
+                                    onClick={() => setSettingsTab(t.id)}>{t.label}</button>
+                            ))}
                         </div>
 
-                        {/* Auto-run Schedule */}
-                        <div className="px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-[0.78rem] font-semibold" style={{ color: 'var(--fg)' }}>Auto-run schedule</span>
-                                <label className="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" checked={scheduleEnabled} onChange={e => setScheduleEnabled(e.target.checked)} className="sr-only peer" />
-                                    <div className="w-9 h-5 rounded-full peer-checked:bg-blue-500 transition" style={{ background: scheduleEnabled ? 'var(--primary)' : 'var(--border2)' }}>
-                                        <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform mt-0.5 ${scheduleEnabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+                        {settingsTab === 'settings' ? (
+                            <div className="flex-1 overflow-y-auto">
+                                {/* Name + Description */}
+                                <div className="p-3 space-y-3" style={{ borderBottom: '1px solid var(--border)' }}>
+                                    <div>
+                                        <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>Name</label>
+                                        <input className="w-full rounded px-2 py-1.5 text-[0.75rem]"
+                                            style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
+                                            value={editing.name} onChange={e => setEditing(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Login to site" />
                                     </div>
-                                </label>
-                            </div>
-                            {scheduleEnabled && (
-                                <div className="space-y-2">
-                                    <div className="flex items-center gap-2">
-                                        <label className="text-[0.7rem] font-medium" style={{ color: 'var(--muted)' }}>Profile:</label>
-                                        <select className="flex-1 rounded px-2 py-1 text-[0.72rem]" style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
-                                            value={scheduleProfileId} onChange={e => setScheduleProfileId(e.target.value)}>
-                                            <option value="">Select profile</option>
-                                            {profiles.map(p => <option key={p.id} value={p.id}>{p.name || p.id}</option>)}
-                                        </select>
+                                    <div>
+                                        <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>Description (optional)</label>
+                                        <input className="w-full rounded px-2 py-1.5 text-[0.75rem]"
+                                            style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
+                                            value={editing.description} onChange={e => setEditing(p => ({ ...p, description: e.target.value }))} placeholder="What does this script do?" />
                                     </div>
-                                    {/* Preset buttons */}
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {CRON_PRESETS.map(p => (
-                                            <button key={p.cron}
-                                                className={`px-2 py-0.5 rounded text-[0.68rem] font-medium transition ${cronExpr === p.cron ? 'text-white' : ''}`}
-                                                style={{ background: cronExpr === p.cron ? 'var(--primary)' : 'var(--glass)', border: '1px solid var(--border2)', color: cronExpr === p.cron ? '#fff' : 'var(--fg)' }}
-                                                onClick={() => applyCronPreset(p.cron)}>{p.label}</button>
-                                        ))}
+                                </div>
+                                {/* Auto-run Schedule */}
+                                <div className="px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-[0.78rem] font-semibold" style={{ color: 'var(--fg)' }}>Auto-run schedule</span>
+                                        <label className="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" checked={scheduleEnabled} onChange={e => setScheduleEnabled(e.target.checked)} className="sr-only peer" />
+                                            <div className="w-9 h-5 rounded-full peer-checked:bg-blue-500 transition" style={{ background: scheduleEnabled ? 'var(--primary)' : 'var(--border2)' }}>
+                                                <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform mt-0.5 ${scheduleEnabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+                                            </div>
+                                        </label>
                                     </div>
-                                    {/* Cron dropdowns */}
-                                    <div className="flex gap-2">
-                                        {[
-                                            { label: 'Minute', value: cronMinute, set: setCronMinute, options: MINUTE_OPTIONS },
-                                            { label: 'Hour', value: cronHour, set: setCronHour, options: HOUR_OPTIONS },
-                                            { label: 'Day', value: cronDay, set: setCronDay, options: DAY_OPTIONS },
-                                            { label: 'Month', value: cronMonth, set: setCronMonth, options: MONTH_OPTIONS },
-                                            { label: 'Weekday', value: cronWeekday, set: setCronWeekday, options: WEEKDAY_OPTIONS },
-                                        ].map(f => (
-                                            <div key={f.label} className="flex-1">
-                                                <label className="text-[0.62rem] font-medium block mb-0.5" style={{ color: 'var(--muted)' }}>{f.label}</label>
-                                                <select className="w-full rounded px-1 py-1 text-[0.7rem]" style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
-                                                    value={f.value} onChange={e => f.set(e.target.value)}>
-                                                    {f.options.map(o => <option key={o} value={o}>{o}</option>)}
+                                    {scheduleEnabled && (
+                                        <div className="space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <label className="text-[0.7rem] font-medium" style={{ color: 'var(--muted)' }}>Profile:</label>
+                                                <select className="flex-1 rounded px-2 py-1 text-[0.72rem]" style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
+                                                    value={scheduleProfileId} onChange={e => setScheduleProfileId(e.target.value)}>
+                                                    <option value="">Select profile</option>
+                                                    {profiles.map(p => <option key={p.id} value={p.id}>{p.name || p.id}</option>)}
                                                 </select>
                                             </div>
-                                        ))}
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {CRON_PRESETS.map(p => (
+                                                    <button key={p.cron}
+                                                        className={`px-2 py-0.5 rounded text-[0.68rem] font-medium transition ${cronExpr === p.cron ? 'text-white' : ''}`}
+                                                        style={{ background: cronExpr === p.cron ? 'var(--primary)' : 'var(--glass)', border: '1px solid var(--border2)', color: cronExpr === p.cron ? '#fff' : 'var(--fg)' }}
+                                                        onClick={() => applyCronPreset(p.cron)}>{p.label}</button>
+                                                ))}
+                                            </div>
+                                            <div className="flex gap-2">
+                                                {[
+                                                    { label: 'Minute', value: cronMinute, set: setCronMinute, options: MINUTE_OPTIONS },
+                                                    { label: 'Hour', value: cronHour, set: setCronHour, options: HOUR_OPTIONS },
+                                                    { label: 'Day', value: cronDay, set: setCronDay, options: DAY_OPTIONS },
+                                                    { label: 'Month', value: cronMonth, set: setCronMonth, options: MONTH_OPTIONS },
+                                                    { label: 'Weekday', value: cronWeekday, set: setCronWeekday, options: WEEKDAY_OPTIONS },
+                                                ].map(f => (
+                                                    <div key={f.label} className="flex-1">
+                                                        <label className="text-[0.62rem] font-medium block mb-0.5" style={{ color: 'var(--muted)' }}>{f.label}</label>
+                                                        <select className="w-full rounded px-1 py-1 text-[0.7rem]" style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
+                                                            value={f.value} onChange={e => f.set(e.target.value)}>
+                                                            {f.options.map(o => <option key={o} value={o}>{o}</option>)}
+                                                        </select>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <input className="rounded px-2 py-1 text-[0.72rem] font-mono w-[140px]"
+                                                    style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
+                                                    value={cronExpr} onChange={e => setCronExpr(e.target.value)} />
+                                                <span className="text-[0.7rem]" style={{ color: 'var(--muted)' }}>{describeCron(cronExpr)}</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                                {/* Browser Mode */}
+                                <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+                                    <div>
+                                        <span className="text-[0.78rem] font-semibold block" style={{ color: 'var(--fg)' }}>Browser mode</span>
+                                        <span className="text-[0.68rem]" style={{ color: 'var(--muted)' }}>{browserMode === 'headless' ? 'Background (no window)' : 'Visible (show window)'}</span>
                                     </div>
-                                    {/* Cron expression display */}
-                                    <div className="flex items-center gap-3">
-                                        <input className="rounded px-2 py-1 text-[0.72rem] font-mono w-[140px]"
-                                            style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
-                                            value={cronExpr} onChange={e => setCronExpr(e.target.value)} />
-                                        <span className="text-[0.7rem]" style={{ color: 'var(--muted)' }}>{describeCron(cronExpr)}</span>
+                                    <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border2)' }}>
+                                        <button className={`px-3 py-1 text-[0.72rem] font-medium transition ${browserMode === 'headless' ? 'text-white' : ''}`}
+                                            style={{ background: browserMode === 'headless' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'headless' ? '#fff' : 'var(--fg)' }}
+                                            onClick={() => setBrowserMode('headless')}>Headless</button>
+                                        <button className={`px-3 py-1 text-[0.72rem] font-medium transition ${browserMode === 'visible' ? 'text-white' : ''}`}
+                                            style={{ background: browserMode === 'visible' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'visible' ? '#fff' : 'var(--fg)' }}
+                                            onClick={() => setBrowserMode('visible')}>Visible</button>
                                     </div>
                                 </div>
-                            )}
-                        </div>
-
-                        {/* Browser Mode */}
-                        <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
-                            <div>
-                                <span className="text-[0.78rem] font-semibold block" style={{ color: 'var(--fg)' }}>Browser mode</span>
-                                <span className="text-[0.68rem]" style={{ color: 'var(--muted)' }}>{browserMode === 'headless' ? 'Background (no window)' : 'Visible (show window)'}</span>
                             </div>
-                            <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border2)' }}>
-                                <button className={`px-3 py-1 text-[0.72rem] font-medium transition ${browserMode === 'headless' ? 'text-white' : ''}`}
-                                    style={{ background: browserMode === 'headless' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'headless' ? '#fff' : 'var(--fg)' }}
-                                    onClick={() => setBrowserMode('headless')}>Headless</button>
-                                <button className={`px-3 py-1 text-[0.72rem] font-medium transition ${browserMode === 'visible' ? 'text-white' : ''}`}
-                                    style={{ background: browserMode === 'visible' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'visible' ? '#fff' : 'var(--fg)' }}
-                                    onClick={() => setBrowserMode('visible')}>Visible</button>
-                            </div>
-                        </div>
+                        ) : (
+                            <ApiReferencePanel onInsert={handleInsertSnippet} />
+                        )}
+                    </div>
 
-                        {/* Monaco Editor */}
+                    {/* Right: Code Editor */}
+                    <div className="flex-1 flex flex-col" style={{ background: 'var(--card)' }}>
                         <div className="flex-1 relative" style={{ minHeight: 200 }}>
                             <Editor height="100%" language="javascript" theme="vs-dark"
                                 value={editing.code} onChange={v => setEditing(p => ({ ...p, code: v || '' }))}
                                 options={{ minimap: { enabled: false }, fontSize: 13, lineNumbers: 'on', scrollBeyondLastLine: false, automaticLayout: true, tabSize: 2, wordWrap: 'on', padding: { top: 8 } }} />
                         </div>
-
-                        {/* Run bar */}
-                        <div className="px-3 py-2 flex items-center gap-3" style={{ borderTop: '1px solid var(--border)', background: 'var(--card2)' }}>
-                            <select className="rounded px-2 py-1 text-[0.72rem]" style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
-                                value={runProfileId} onChange={e => setRunProfileId(e.target.value)}>
-                                <option value="">Select profile to run...</option>
-                                {profiles.map(p => <option key={p.id} value={p.id}>{p.name || p.id}</option>)}
-                            </select>
-                            <button className="btn btn-success text-[0.75rem] flex items-center gap-1" onClick={() => editing?.id ? openRunModal(editing) : alert('Save script first.')} disabled={running}>
-                                {running ? <><RefreshCw size={14} className="animate-spin" /> Running...</> : <><Play size={14} /> Run</>}
-                            </button>
-                        </div>
-
-                        {/* Run result */}
-                        {runResult && (
-                            <div className="max-h-[150px] font-mono text-[0.72rem] overflow-y-auto p-3" style={{ borderTop: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--fg)' }}>
-                                <div className={`mb-2 flex items-center gap-2 font-bold ${runResult.success ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                    {runResult.success ? '✅ Completed' : '❌ Error'} {runResult.error && `— ${runResult.error}`}
-                                </div>
-                                {runResult.logs?.map((l, i) => (
-                                    <div key={i} className="mb-0.5">
-                                        <span className="mr-2" style={{ color: 'var(--muted)' }}>[{new Date(l.time).toLocaleTimeString()}]</span>
-                                        <span>{l.message}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
                     </div>
-                ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: 'var(--muted)' }}>
-                        <FileCode size={48} strokeWidth={1} />
-                        <p className="text-[0.8rem]">Select a script or create a new one</p>
-                    </div>
-                )}
-            </div>
-
-            {/* ═══ Right API Reference ═══ */}
-            <ApiReferencePanel onInsert={editing ? handleInsertSnippet : null} />
+                </>
+            ) : (
+                <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: 'var(--muted)' }}>
+                    <FileCode size={48} strokeWidth={1} />
+                    <p className="text-[0.8rem]">Select a script or create a new one</p>
+                </div>
+            )}
 
             {/* Run Script Modal */}
             {runModalScript && (
@@ -953,7 +954,6 @@ function BulkRunModal({ script, profiles = [], onClose }) {
 /* ═══════════════ Run Script Modal ═══════════════ */
 function RunScriptModal({ script, profiles = [], defaultProfileId = '', onClose, onComplete }) {
     const [selectedProfileId, setSelectedProfileId] = useState(defaultProfileId || '');
-    const [browserMode, setBrowserMode] = useState(script?.browserMode || 'visible');
     const [isRunning, setIsRunning] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [result, setResult] = useState(null);
@@ -970,7 +970,7 @@ function RunScriptModal({ script, profiles = [], defaultProfileId = '', onClose,
         try {
             const res = await window.electronAPI.executeScript(selectedProfileId, script.id, {
                 timeoutMs: 120000,
-                headless: browserMode === 'headless',
+                headless: script?.browserMode === 'headless',
             });
             setResult(res);
             setLogs(res.logs || []);
@@ -1017,6 +1017,9 @@ function RunScriptModal({ script, profiles = [], defaultProfileId = '', onClose,
                         <div>
                             <h3 className="text-[0.9rem] font-bold" style={{ color: 'var(--fg)' }}>Run Script</h3>
                             <p className="text-[0.7rem]" style={{ color: 'var(--muted)' }}>{script?.name || 'Untitled Script'}</p>
+                            <p className="text-[0.65rem]" style={{ color: 'var(--primary)' }}>
+                                Mode: {script?.browserMode === 'headless' ? 'Headless (background)' : 'Visible (window)'}
+                            </p>
                         </div>
                     </div>
                     <button className="p-1.5 rounded-lg transition hover:brightness-125" style={{ background: 'var(--glass)', color: 'var(--muted)' }} onClick={onClose}>
@@ -1033,29 +1036,9 @@ function RunScriptModal({ script, profiles = [], defaultProfileId = '', onClose,
                         </div>
                     )}
 
-                    {/* Browser Mode */}
-                    <div>
-                        <label className="text-[0.72rem] font-semibold block mb-2" style={{ color: 'var(--fg)' }}>Browser Mode</label>
-                        <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border2)' }}>
-                            <button className="flex-1 px-3 py-2 text-[0.75rem] font-medium transition flex items-center justify-center gap-2"
-                                style={{ background: browserMode === 'visible' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'visible' ? '#fff' : 'var(--fg)' }}
-                                onClick={() => setBrowserMode('visible')}>
-                                <span style={{ fontSize: '1rem' }}>🖥️</span> Visible
-                            </button>
-                            <button className="flex-1 px-3 py-2 text-[0.75rem] font-medium transition flex items-center justify-center gap-2"
-                                style={{ background: browserMode === 'headless' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'headless' ? '#fff' : 'var(--fg)', borderLeft: '1px solid var(--border2)' }}
-                                onClick={() => setBrowserMode('headless')}>
-                                <span style={{ fontSize: '1rem' }}>👻</span> Headless
-                            </button>
-                        </div>
-                        <p className="text-[0.65rem] mt-1" style={{ color: 'var(--muted)' }}>
-                            {browserMode === 'headless' ? 'Browser runs in background — no window shown' : 'Browser window will be visible during execution'}
-                        </p>
-                    </div>
-
                     {/* Profile Selection */}
                     <div>
-                        <label className="text-[0.72rem] font-semibold block mb-2" style={{ color: 'var(--fg)' }}>Select Profile</label>
+                        <label className="text-[0.72rem] font-semibold block mb-2" style={{ color: 'var(--fg)' }}>Run with profile</label>
                         <select className="w-full rounded-lg px-3 py-2 text-[0.78rem]"
                             style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
                             value={selectedProfileId} onChange={e => setSelectedProfileId(e.target.value)}>
@@ -1144,8 +1127,7 @@ function ApiReferencePanel({ onInsert }) {
     const resultCount = filteredCats.reduce((s, c) => s + c.methods.length, 0);
 
     return (
-        <div className="w-[260px] flex flex-col" style={{ background: 'var(--card)', borderLeft: '1px solid var(--border)' }}>
-            <div className="px-3 py-2 text-[0.78rem] font-semibold" style={{ color: 'var(--fg)', borderBottom: '1px solid var(--border)' }}>API Reference</div>
+        <div className="flex-1 flex flex-col overflow-hidden" style={{ background: 'var(--card)' }}>
             <div className="px-3 py-1.5 relative" style={{ borderBottom: '1px solid var(--border)' }}>
                 <Search size={12} className="absolute left-5 top-[0.65rem]" style={{ color: 'var(--muted)' }} />
                 <input placeholder="Search methods..." value={search} onChange={e => setSearch(e.target.value)}

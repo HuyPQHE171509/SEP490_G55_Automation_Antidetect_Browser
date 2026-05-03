@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useI18n } from '../i18n/index';
 import BrowserRuntimes from './BrowserRuntimes';
 import { getCheckoutUrl } from '../config/app.config';
+import AuditLogViewer from './AuditLogViewer';
 
 export default function SettingsTab({
     apiStatus,
@@ -21,16 +22,35 @@ export default function SettingsTab({
     const [licenseLoading, setLicenseLoading] = useState(false);
     const [autoStartApi, setAutoStartApi] = useState(false);
     const [maxBrowsers, setMaxBrowsers] = useState(5);
+    const [saveFeedback, setSaveFeedback] = useState(null); // 'ok' | 'err' | null
 
     useEffect(() => {
         window.electronAPI.getMachineCode()
             .then(code => setMachineCode(code || 'UNKNOWN'))
             .catch(console.error);
+        // Load saved maxConcurrentBrowsers
+        window.electronAPI.loadSettings?.()
+            .then(res => {
+                const val = res?.settings?.maxConcurrentBrowsers;
+                if (val != null) setMaxBrowsers(Number(val));
+            })
+            .catch(() => {});
     }, []);
+
+    const handleSaveSettings = async () => {
+        try {
+            await window.electronAPI.saveSettings({ maxConcurrentBrowsers: Math.max(1, parseInt(maxBrowsers, 10) || 5) });
+            setSaveFeedback('ok');
+        } catch {
+            setSaveFeedback('err');
+        } finally {
+            setTimeout(() => setSaveFeedback(null), 2000);
+        }
+    };
 
     const handleActivateLicense = async () => {
         const key = licenseKey.trim();
-        if (!key) { setLicenseError('Vui lòng nhập license key.'); return; }
+        if (!key) { setLicenseError(t('license.error.empty', 'Please enter a license key.')); return; }
         setLicenseLoading(true);
         setLicenseError('');
         try {
@@ -39,16 +59,19 @@ export default function SettingsTab({
                 localStorage.setItem('hl-license-activated', key);
                 setLicenseStatus(true);
             } else {
-                setLicenseError('License key không hợp lệ với máy này.');
+                setLicenseError(t('license.error.invalid', 'Invalid license key for this machine.'));
             }
         } catch {
-            setLicenseError('Đã xảy ra lỗi. Thử lại sau.');
+            setLicenseError(t('license.error.system', 'An error occurred. Please try again later.'));
         } finally {
             setLicenseLoading(false);
         }
     };
 
-    const handleDeactivateLicense = () => {
+    const handleDeactivateLicense = async () => {
+        if (window.electronAPI.deactivateLicense) {
+            await window.electronAPI.deactivateLicense();
+        }
         localStorage.removeItem('hl-license-activated');
         setLicenseStatus(false);
         setLicenseKey('');
@@ -62,9 +85,9 @@ export default function SettingsTab({
                 {/* Appearance */}
                 <div className="card relative p-4 mb-6 mt-4">
                     <div className="absolute -top-3 left-4 bg-[var(--card)] px-2 text-[0.85rem] font-bold text-[var(--fg)]">Appearance</div>
-                    <div className="mb-2 pt-1"> 
+                    <div className="mb-2 pt-1">
                         <label className="block text-[0.75rem] text-[var(--muted)] mb-1.5">Theme</label>
-                        <select 
+                        <select
                             value={theme}
                             onChange={(e) => setTheme(e.target.value)}
                             className="w-[160px] text-[0.75rem] py-1 cursor-pointer"
@@ -72,8 +95,8 @@ export default function SettingsTab({
                             <option value="Light">Light</option>
                             <option value="Dark">Dark</option>
                         </select>
+                        <p className="text-[0.7rem] text-[var(--muted)] mt-1">Current mode: {theme}</p>
                     </div>
-                    <p className="text-[0.7rem] text-[var(--muted)]">Current mode: {theme}</p>
                 </div>
 
                 {/* License */}
@@ -82,20 +105,20 @@ export default function SettingsTab({
                     <div className="flex items-center gap-2 mb-3 pt-1">
                         <div className={`w-2 h-2 rounded-full ${licenseStatus ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
                         <span className="text-[0.85rem] font-medium text-[var(--fg)]">
-                            {licenseStatus ? 'Licensed ✔' : 'Not licensed'}
+                            {licenseStatus ? t('license.status.licensed', 'Licensed ✔') : t('license.status.notLicensed', 'Not licensed')}
                         </span>
                     </div>
                     {licenseStatus ? (
                         <div>
-                            <p className="text-[0.7rem] text-emerald-500 mb-3">Đã kích hoạt. Không giới hạn profiles.</p>
+                            <p className="text-[0.7rem] text-emerald-500 mb-3">{t('license.status.activated', 'Activated. Unlimited profiles.')}</p>
                             <button onClick={handleDeactivateLicense} className="text-[0.7rem] text-red-400 hover:underline">
-                                Hủy kích hoạt
+                                {t('license.deactivateBtn', 'Deactivate License')}
                             </button>
                         </div>
                     ) : (
                         <>
-                            <p className="text-[0.7rem] text-red-500 mb-1">No license key configured</p>
-                            <p className="text-[0.7rem] text-[var(--muted)] mb-3">Free plan: up to 5 profiles.</p>
+                            <p className="text-[0.7rem] text-red-500 mb-1">{t('license.status.noKey', 'No license key configured')}</p>
+                            <p className="text-[0.7rem] text-[var(--muted)] mb-3">{t('license.status.freePlan', 'Free plan: up to 5 profiles.')}</p>
                             <div className="flex gap-2 mb-1">
                                 <input
                                     type="text"
@@ -111,7 +134,7 @@ export default function SettingsTab({
                                     disabled={licenseLoading}
                                     className="btn btn-success px-3 py-1.5 text-[0.75rem] disabled:opacity-50"
                                 >
-                                    {licenseLoading ? '...' : 'Activate'}
+                                    {licenseLoading ? t('license.checking', 'Checking...') : t('license.activateBtn', 'Activate')}
                                 </button>
                             </div>
                             {licenseError && <p className="text-[0.7rem] text-red-400 mb-2">{licenseError}</p>}
@@ -209,7 +232,9 @@ export default function SettingsTab({
                         className="w-[80px] text-[0.75rem] py-1 mb-2"
                     />
                     <p className="text-[0.7rem] text-[var(--muted)] mb-4">Limits simultaneous browser instances. Higher = more RAM usage.</p>
-                    <button className="btn btn-success px-4 py-1.5 text-[0.75rem]">Save Settings</button>
+                    <button className="btn btn-success px-4 py-1.5 text-[0.75rem]" onClick={handleSaveSettings}>
+                        {saveFeedback === 'ok' ? '✓ Saved' : saveFeedback === 'err' ? '✗ Failed' : 'Save Settings'}
+                    </button>
                 </div>
 
                 {/* Environment Variables */}
@@ -234,6 +259,15 @@ export default function SettingsTab({
                         <p className="text-[0.7rem] text-[var(--muted)] italic"><strong className="font-semibold not-italic">Note:</strong> Environment variables must be set before launching the application. Restart required after changes.</p>
                     </div>
                 </div>
+
+                {/* Audit Log */}
+                <div className="card relative p-4 mb-6 mt-4">
+                    <div className="absolute -top-3 left-4 bg-[var(--card)] px-2 text-[0.85rem] font-bold text-[var(--fg)]">Audit Log</div>
+                    <div className="pt-1">
+                        <AuditLogViewer />
+                    </div>
+                </div>
+
             </div>
         </div>
     );
