@@ -76,28 +76,34 @@ function registerIpcHandlers(extra = {}) {
     return r;
   });
 
+  // [UC_08 / UC_14.01] Lấy danh sách tất cả profile từ file lưu trữ
   handle('get-profiles', async () => await getProfilesInternal());
+  // [UC_08.01 / UC_08.02 / UC_14.02 / UC_14.03] Tạo mới hoặc cập nhật profile — gọi saveProfileInternal() trong storage/profiles.js
   handle('save-profile', async (_e, profile) => {
     const r = await saveProfileInternal(profile);
     if (r?.success) appendLog('system', `Profile saved: ${profile.name || profile.id}`);
     return r;
   });
+  // [UC_08.03 / UC_14.04] Xóa profile — dừng profile đang chạy trước, sau đó xóa khỏi storage
   handle('delete-profile', async (_e, profileId) => {
     try { await stopProfileInternal(profileId); } catch { }
     const r = await deleteProfileInternal(profileId);
     if (r?.success) appendLog('system', `Profile deleted: ${profileId}`);
     return r;
   });
+  // [UC_08.04 / UC_08.05 / UC_15.01] Mở trình duyệt cho profile — gọi launchProfileInternal() trong controllers/profiles.js
   handle('launch-profile', async (_e, profileId, options = {}) => {
     appendLog(profileId, `Profile launch requested (engine=${options.engine || 'default'}, headless=${!!options.headless})`);
     const r = await launchProfileInternal(profileId, options);
     if (!r?.success) appendLog(profileId, `Profile launch failed: ${r?.error || 'unknown'}`);
     return r;
   });
+  // [UC_08.06 / UC_15.02] Dừng trình duyệt đang chạy của profile
   handle('stop-profile', async (_e, profileId) => {
     appendLog(profileId, 'Profile stop requested');
     return await stopProfileInternal(profileId);
   });
+  // [UC_08.06] Dừng tất cả trình duyệt đang chạy
   handle('stop-all-profiles', async () => {
     appendLog('system', 'Stop all profiles requested');
     return await stopAllProfilesInternal();
@@ -126,7 +132,9 @@ function registerIpcHandlers(extra = {}) {
     return r;
   });
   handle('get-profile-ws', async (_e, profileId) => await getProfileWsInternal(profileId));
+  // [UC_15.03] Kiểm tra trạng thái đang chạy của tất cả profile
   handle('get-running-map', async () => await getRunningMapInternal());
+  // [UC_15.03] Lấy map trạng thái chi tiết (STARTING/RUNNING/STOPPED) của các profile
   handle('get-status-map', async () => getStatusMapInternal());
   handle('get-locales-timezones', async () => await getLocalesTimezonesInternal());
   handle('clone-profile', async (_e, sourceProfileId, overrides = {}) => {
@@ -162,6 +170,7 @@ function registerIpcHandlers(extra = {}) {
   // Tự động hóa (Automation)
   handle('run-automation-now', async (_e, profileId) => await runAutomationNowInternal(profileId));
 
+  // [UC_16.xx] Dispatcher chung cho tất cả hành động tương tác trình duyệt (navigate, click, fill, screenshot...)
   // Bộ thực thi hành động chung nhận từ Frontend: (profileId, actionName, params)
   handle('profile-action', async (_e, profileId, actionName, params = {}) => {
     try { return await performAction(profileId, String(actionName), params || {}); }
@@ -205,19 +214,23 @@ function registerIpcHandlers(extra = {}) {
   });
 
   // Quản lý Kịch bản Tự động hóa (Scripts)
+  // [UC_19.01] Lấy danh sách tất cả script
   handle('scripts-list', async () => await listScriptsInternal());
   handle('scripts-get', async (_e, id) => await getScriptInternal(id));
+  // [UC_19.02 / UC_19.03] Tạo mới hoặc cập nhật script
   handle('scripts-save', async (_e, script) => {
     const r = await saveScriptInternal(script);
     if (r?.success) appendLog('system', `Script saved: "${script?.name || script?.id || 'unnamed'}"`);
     else appendLog('system', `Script save failed: ${r?.error || 'unknown'}`);
     return r;
   });
+  // [UC_19.04] Xóa script
   handle('scripts-delete', async (_e, id) => {
     const r = await deleteScriptInternal(id);
     if (r?.success) appendLog('system', `Script deleted: ${id}`);
     return r;
   });
+  // [UC_17.03] Thực thi script automation trên profile — kiểm tra ethical, tự launch profile nếu chưa chạy
   handle('scripts-execute', async (_e, profileId, scriptId, opts) => {
     const startedAt = new Date().toISOString();
     try {
@@ -292,8 +305,10 @@ function registerIpcHandlers(extra = {}) {
   });
 
   // Quản lý nhật ký tác vụ theo thời gian thực (Task logs)
+  // [UC_17.01] Lấy danh sách task log
   handle('task-logs-list', async () => getTaskLogs());
   handle('task-logs-get', async (_e, id) => getTaskLogById(id));
+  // [UC_17.05] Xóa task record
   handle('task-logs-delete', async (_e, id) => {
     const r = await deleteTaskLog(id);
     if (r?.success) appendLog('system', `Task log deleted: ${id}`);
