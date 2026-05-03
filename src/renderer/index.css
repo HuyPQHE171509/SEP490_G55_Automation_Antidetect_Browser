@@ -113,6 +113,7 @@ body {
 
 .btn:hover {
   background: var(--glass-hover);
+  transform: translateY(-1px);
 }
 
 .btn:disabled {

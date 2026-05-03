@@ -216,8 +216,13 @@
   user-select: none;
 }
 
+.pl-fp-badge:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+}
+
 .pl-fp-badge:active {
-  opacity: 0.7;
+  transform: translateY(0);
 }
 
 /* ON state: green highlight */
