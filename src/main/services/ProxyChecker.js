@@ -10,9 +10,25 @@
 const http = require('http');
 const https = require('https');
 const { URL } = require('url');
-const { HttpProxyAgent } = require('http-proxy-agent');
-const { HttpsProxyAgent } = require('https-proxy-agent');
-const { SocksProxyAgent } = require('socks-proxy-agent');
+
+// http-proxy-agent / https-proxy-agent / socks-proxy-agent v7+ are pure ESM —
+// they cannot be require()'d from CommonJS (ERR_REQUIRE_ESM in packaged builds).
+// Load them lazily via dynamic import() inside async functions.
+let _httpAgent, _httpsAgent, _socksAgent;
+async function loadAgents() {
+  if (!_httpAgent) {
+    [_httpAgent, _httpsAgent, _socksAgent] = await Promise.all([
+      import('http-proxy-agent'),
+      import('https-proxy-agent'),
+      import('socks-proxy-agent'),
+    ]);
+  }
+  return {
+    HttpProxyAgent: _httpAgent.HttpProxyAgent,
+    HttpsProxyAgent: _httpsAgent.HttpsProxyAgent,
+    SocksProxyAgent: _socksAgent.SocksProxyAgent,
+  };
+}
 
 const TIMEOUT_MS = 10000;
 
@@ -65,9 +81,10 @@ function buildProxyUrl(cfg) {
  * Build the right proxy agent for a given (proxy, target) pair.
  * Agents handle CONNECT tunneling automatically for HTTPS targets.
  */
-function buildAgent(cfg, isHttpsTarget) {
+async function buildAgent(cfg, isHttpsTarget) {
   const proxyUrl = buildProxyUrl(cfg);
   if (!proxyUrl) return null;
+  const { HttpProxyAgent, HttpsProxyAgent, SocksProxyAgent } = await loadAgents();
   const type = (cfg.type || 'http').toLowerCase();
   if (type.startsWith('socks')) return new SocksProxyAgent(proxyUrl);
   return isHttpsTarget ? new HttpsProxyAgent(proxyUrl) : new HttpProxyAgent(proxyUrl);
@@ -77,13 +94,13 @@ function buildAgent(cfg, isHttpsTarget) {
  * Perform a GET request through the proxy. Works for both HTTP and HTTPS
  * targets — HTTPS goes through CONNECT tunneling via the agent.
  */
-function httpGetViaProxy(targetUrl, cfg, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    const target = new URL(targetUrl);
-    const isHttps = target.protocol === 'https:';
-    const agent = buildAgent(cfg, isHttps);
-    if (!agent) return reject(new Error('Invalid proxy configuration'));
+async function httpGetViaProxy(targetUrl, cfg, timeoutMs) {
+  const target = new URL(targetUrl);
+  const isHttps = target.protocol === 'https:';
+  const agent = await buildAgent(cfg, isHttps);
+  if (!agent) throw new Error('Invalid proxy configuration');
 
+  return new Promise((resolve, reject) => {
     const lib = isHttps ? https : http;
     const opts = {
       method: 'GET',

@@ -241,8 +241,8 @@ function ScriptsTab({ profiles }) {
         try {
             const res = await window.electronAPI.listScripts();
             const list = Array.isArray(res) ? res : (res?.scripts || []);
-            const exportData = list.map(({ id, name, description, code, cronSchedule, cronEnabled, cronProfileId }) =>
-                ({ id, name, description, code, cronSchedule, cronEnabled, cronProfileId })
+            const exportData = list.map(({ id, name, description, code }) =>
+                ({ id, name, description, code })
             );
             const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
             const a = document.createElement('a');
