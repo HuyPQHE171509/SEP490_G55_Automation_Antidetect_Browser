@@ -138,9 +138,11 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
   });
 
   // Health
+  // [UC_21.01] Kiểm tra server còn sống — trả về { ok: true }
   appx.get("/api/health", (_req, reply) => reply.send({ ok: true }));
 
   // Profiles CRUD
+  // [UC_14.01] Lấy danh sách tất cả profile
   appx.get("/api/profiles", async (_req, reply) => {
     const list = await handlers.getProfilesInternal();
     reply.send(list);
@@ -180,6 +182,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
     if (result.success) broadcastProfilesUpdated();
     reply.send(result);
   });
+  // [UC_14.02] Tạo profile mới qua API — sinh fingerprint ngẫu nhiên, kiểm tra license, lưu vào storage
   appx.post("/api/profiles", async (req, reply) => {
     try {
       const body = req.body || {};
@@ -349,6 +352,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
       reply.code(500).send({ success: false, error: e?.message || String(e) });
     }
   });
+  // [UC_14.03] Cập nhật cấu hình profile — merge partial update vào profile hiện có
   appx.put("/api/profiles/:id", async (req, reply) => {
     try {
       const profileId = req.params.id;
@@ -502,6 +506,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
       reply.code(500).send({ success: false, error: e?.message || String(e) });
     }
   });
+  // [UC_14.04] Xóa profile — dừng nếu đang chạy trước khi xóa
   appx.delete("/api/profiles/:id", async (req, reply) => {
     try {
       const list = await handlers.getProfilesInternal();
@@ -528,6 +533,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
   });
 
   // Launch/stop
+  // [UC_15.01] Mở trình duyệt cho profile qua API (cũ, giữ tương thích)
   appx.post("/api/profiles/:id/launch", async (req, reply) => {
     const result = await handlers.launchProfileInternal(
       req.params.id,
@@ -535,6 +541,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
     );
     reply.send(result);
   });
+  // [UC_15.02] Dừng trình duyệt profile qua API (cũ, giữ tương thích)
   appx.post("/api/profiles/:id/stop", async (req, reply) => {
     const result = await handlers.stopProfileInternal(req.params.id);
     reply.send(result);
@@ -553,6 +560,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
 
   // ── Browsers API (matching instructor spec) ──
   // POST /api/browsers/:profileId/launch
+  // [UC_15.01] Mở trình duyệt — hỗ trợ headless=true/false
   appx.post("/api/browsers/:profileId/launch", async (req, reply) => {
     try {
       const { profileId } = req.params;
@@ -577,6 +585,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
   });
 
   // POST /api/browsers/:profileId/close
+  // [UC_15.02] Đóng trình duyệt đang chạy của profile
   appx.post("/api/browsers/:profileId/close", async (req, reply) => {
     try {
       const result = await handlers.stopProfileInternal(req.params.profileId);
@@ -590,6 +599,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
   });
 
   // GET /api/browsers/:profileId/status
+  // [UC_15.03] Kiểm tra profile có đang chạy không — trả về { running: boolean }
   appx.get("/api/browsers/:profileId/status", async (req, reply) => {
     try {
       const { profileId } = req.params;
@@ -752,40 +762,53 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
   };
 
   // Image 1: Basic Browser Navigation & Interactions
+  // [UC_16.01] Điều hướng trình duyệt đến URL chỉ định
   appx.post("/api/browsers/:profileId/actions/navigate", mapAction("nav.goto"));
+  // [UC_16.02] Tải lại trang hiện tại
   appx.post("/api/browsers/:profileId/actions/reload", mapAction("nav.reload"));
+  // [UC_16.03] Quay lại trang trước trong lịch sử
   appx.post("/api/browsers/:profileId/actions/go-back", mapAction("nav.back"));
+  // [UC_16.04] Tiến đến trang tiếp theo trong lịch sử
   appx.post(
     "/api/browsers/:profileId/actions/go-forward",
     mapAction("nav.forward"),
   );
+  // [UC_16.06] Lấy URL và tiêu đề trang hiện tại
   appx.get(
     "/api/browsers/:profileId/actions/page-info",
     mapAction("page.info"),
   );
+  // [UC_16.05] Lấy toàn bộ HTML nội dung trang hiện tại
   appx.get(
     "/api/browsers/:profileId/actions/content",
     mapAction("page.content"),
   );
+  // [UC_16.07] Chụp ảnh màn hình — trả về base64 PNG
   appx.post(
     "/api/browsers/:profileId/actions/screenshot",
     mapAction("capture.screen"),
   );
+  // [UC_16.08] Click vào phần tử DOM theo selector
   appx.post(
     "/api/browsers/:profileId/actions/click",
     mapAction("click.element"),
   );
+  // [UC_16.09] Double-click vào phần tử DOM
   appx.post(
     "/api/browsers/:profileId/actions/double-click",
     mapAction("element.dblclick"),
   );
+  // [UC_16.10] Di chuột hover lên phần tử DOM
   appx.post("/api/browsers/:profileId/actions/hover", mapAction("hover"));
+  // [UC_16.11] Focus vào phần tử input/textarea
   appx.post(
     "/api/browsers/:profileId/actions/focus",
     mapAction("element.focus"),
   );
+  // [UC_16.12] Xóa và điền nội dung mới vào input field
   appx.post("/api/browsers/:profileId/actions/fill", mapAction("input.fill"));
   appx.post("/api/browsers/:profileId/actions/type", mapAction("input.type"));
+  // [UC_16.13] Nhấn phím bàn phím (Enter, Tab, Escape...)
   appx.post(
     "/api/browsers/:profileId/actions/press-key",
     mapAction("keyboard.pressKey"),
@@ -797,6 +820,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
 
   // Image 2: Element checks, scrolling and waiting
   appx.post("/api/browsers/:profileId/actions/check", mapAction("input.check"));
+  // [UC_16.14] Cuộn trang hoặc cuộn phần tử vào vùng nhìn thấy
   appx.post(
     "/api/browsers/:profileId/actions/scroll",
     mapAction("page.scroll"),
@@ -810,6 +834,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
     "/api/browsers/:profileId/actions/dispatch-event",
     mapAction("element.dispatchEvent"),
   );
+  // [UC_16.15] Thay đổi kích thước viewport trình duyệt
   appx.post(
     "/api/browsers/:profileId/actions/set-viewport-size",
     mapAction("viewport.set"),
@@ -830,6 +855,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
     "/api/browsers/:profileId/actions/wait-for-url",
     mapAction("wait-for-url"),
   );
+  // [UC_16.16] Lấy innerText của phần tử DOM
   appx.post(
     "/api/browsers/:profileId/actions/get-text",
     mapAction("element.text"),
@@ -1015,6 +1041,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
 
   // ── Tasks API ──
   // GET /api/tasks/ — list tasks (optionally filtered by profileId)
+  // [UC_17.01] Lấy danh sách task — có thể lọc theo profileId
   appx.get("/api/tasks", async (req, reply) => {
     try {
       const { getTaskLogs } = require("../storage/taskLogs");
@@ -1028,6 +1055,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
   });
 
   // POST /api/tasks/ — create a new task
+  // [UC_17.02] Tạo task mới với scriptContent — lưu vào taskLogs với status=queued
   appx.post("/api/tasks", async (req, reply) => {
     try {
       const { addTaskLog } = require("../storage/taskLogs");
@@ -1076,6 +1104,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
   });
 
   // POST /api/tasks/:id/run — run or re-run a task, update existing record
+  // [UC_17.03] Thực thi task — gọi executeScript(), cập nhật trạng thái async
   appx.post("/api/tasks/:id/run", async (req, reply) => {
     try {
       const { getTaskLogById, updateTaskLog } = require("../storage/taskLogs");
@@ -1124,6 +1153,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
   });
 
   // POST /api/tasks/:id/cancel — stop if running, always return success
+  // [UC_17.04] Hủy task đang chạy — gọi stopScript(), cập nhật status=stopped
   appx.post("/api/tasks/:id/cancel", async (req, reply) => {
     try {
       const { getTaskLogById, updateTaskLog } = require("../storage/taskLogs");
@@ -1147,6 +1177,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
   });
 
   // DELETE /api/tasks/:id — remove task record from log
+  // [UC_17.05] Xóa bản ghi task khỏi log
   appx.delete("/api/tasks/:id", async (req, reply) => {
     try {
       const { deleteTaskLog } = require("../storage/taskLogs");
@@ -1161,6 +1192,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
 
   // ── Proxies API ──
   // GET /api/proxies/
+  // [UC_18.01] Lấy danh sách tất cả proxy
   appx.get("/api/proxies", async (_req, reply) => {
     try {
       const { getProxiesInternal } = require("../storage/proxies");
@@ -1190,6 +1222,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
   });
 
   // POST /api/proxies/ — create a new proxy
+  // [UC_18.02] Tạo proxy mới
   appx.post("/api/proxies", async (req, reply) => {
     try {
       const { createProxyInternal } = require("../storage/proxies");
@@ -1202,6 +1235,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
   });
 
   // PUT /api/proxies/:id
+  // [UC_18.03] Cập nhật proxy
   appx.put("/api/proxies/:id", async (req, reply) => {
     try {
       const { updateProxyInternal } = require("../storage/proxies");
@@ -1216,6 +1250,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
   });
 
   // DELETE /api/proxies/:id
+  // [UC_18.04] Xóa proxy
   appx.delete("/api/proxies/:id", async (req, reply) => {
     try {
       const { deleteProxyInternal } = require("../storage/proxies");
@@ -1480,6 +1515,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
   });
 
   // POST /api/fingerprints/:profileId/generate — generate and save for a profile
+  // [UC_20.02] Sinh fingerprint mới và lưu vào profile chỉ định
   appx.post("/api/fingerprints/:profileId/generate", async (req, reply) => {
     try {
       const { generateFingerprint } = require("../engine/fingerprintGenerator");
@@ -1593,6 +1629,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
   });
 
   // Scripts management (CRUD + execute)
+  // [UC_19.01] Lấy danh sách tất cả script
   appx.get("/api/scripts", async (_req, reply) => {
     try {
       const { listScriptsInternal } = require("../storage/scripts");
@@ -1611,6 +1648,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
       reply.code(500).send({ success: false, error: e?.message || String(e) });
     }
   });
+  // [UC_19.02] Tạo script mới
   appx.post("/api/scripts", async (req, reply) => {
     try {
       const { saveScriptInternal } = require("../storage/scripts");
@@ -1650,6 +1688,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
     }
   });
   // PUT /api/scripts/:id — Update a script (partial update, all fields optional except id)
+  // [UC_19.03] Cập nhật script
   appx.put("/api/scripts/:id", async (req, reply) => {
     try {
       const {
@@ -1705,6 +1744,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
     }
   });
   // DELETE /api/scripts/:id — Delete a script and cancel its cron job
+  // [UC_19.04] Xóa script và hủy cron job liên quan
   appx.delete("/api/scripts/:id", async (req, reply) => {
     try {
       const { deleteScriptInternal } = require("../storage/scripts");
@@ -1745,6 +1785,7 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
 
   // ── Fingerprint Generator ──
   // Generate a random fingerprint (optionally constrained by os/language/timezone)
+  // [UC_20.01] Sinh fingerprint ngẫu nhiên — không lưu vào profile nào
   appx.post("/api/fingerprint/generate", async (req, reply) => {
     try {
       const { generateFingerprint } = require("../engine/fingerprintGenerator");
