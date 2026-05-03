@@ -354,9 +354,9 @@ function ScriptsTab({ profiles }) {
     const filtered = scripts.filter(s => !filter || (s.name || '').toLowerCase().includes(filter.toLowerCase()));
 
     return (
-        <div className="flex-1 flex flex-row rounded-lg gap-[1px] overflow-hidden" style={{ background: 'var(--border)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+        <div className="flex-1 flex flex-row rounded-lg gap-[1px] overflow-x-auto overflow-y-hidden" style={{ background: 'var(--border)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
             {/* ═══ Left Sidebar — Script Cards ═══ */}
-            <div className="w-[280px] flex flex-col" style={{ background: 'var(--card)' }}>
+            <div className="w-[280px] shrink-0 flex flex-col" style={{ background: 'var(--card)' }}>
                 {/* Search + New */}
                 <div className="px-3 py-2 flex gap-2 items-center" style={{ borderBottom: '1px solid var(--border)' }}>
                     <div className="flex-1 relative">
@@ -589,7 +589,7 @@ function ScriptsTab({ profiles }) {
                     </div>
 
                     {/* Right: Code Editor */}
-                    <div className="flex-1 flex flex-col" style={{ background: 'var(--card)' }}>
+                    <div className="flex-1 flex flex-col" style={{ minWidth: '300px', background: 'var(--card)' }}>
                         <div className="flex-1 relative" style={{ minHeight: 200 }}>
                             <Editor height="100%" language="javascript" theme="vs-dark"
                                 value={editing.code} onChange={v => setEditing(p => ({ ...p, code: v || '' }))}
