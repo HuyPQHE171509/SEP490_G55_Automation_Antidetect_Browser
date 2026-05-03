@@ -666,6 +666,15 @@ async function stopProfileInternal(profileId) {
       fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
       appendLog(profileId, 'Saved storage state before stop');
     } catch (e) { appendLog(profileId, `Failed saving state on stop: ${e.message}`); }
+    // Lưu session tabs TRƯỚC khi đóng context — sau khi context.close() thì pages() = []
+    try {
+      const { saveSessionTabs } = require('../storage/sessionTabs');
+      const pages = context.pages();
+      if (pages && pages.length > 0) {
+        saveSessionTabs(profileId, pages.map(p => p.url()));
+        appendLog(profileId, `Saved ${pages.length} session tab(s) before stop`);
+      }
+    } catch (e) { appendLog(profileId, `Failed saving session tabs on stop: ${e.message}`); }
     // Bước 5: Đóng context → browser → server theo thứ tự từ trong ra ngoài
     try { await context.close(); } catch { }
     try { await browser?.close?.(); } catch { }
