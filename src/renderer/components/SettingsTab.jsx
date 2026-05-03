@@ -20,6 +20,7 @@ export default function SettingsTab({
     const [licenseStatus, setLicenseStatus] = useState(() => !!localStorage.getItem('hl-license-activated'));
     const [licenseError, setLicenseError] = useState('');
     const [licenseLoading, setLicenseLoading] = useState(false);
+    const [confirmDeactivate, setConfirmDeactivate] = useState(false);
     const [autoStartApi, setAutoStartApi] = useState(false);
     const [maxBrowsers, setMaxBrowsers] = useState(5);
     const [saveFeedback, setSaveFeedback] = useState(null); // 'ok' | 'err' | null
@@ -75,6 +76,7 @@ export default function SettingsTab({
         localStorage.removeItem('hl-license-activated');
         setLicenseStatus(false);
         setLicenseKey('');
+        setConfirmDeactivate(false);
     };
 
     return (
@@ -111,9 +113,32 @@ export default function SettingsTab({
                     {licenseStatus ? (
                         <div>
                             <p className="text-[0.7rem] text-emerald-500 mb-3">{t('license.status.activated', 'Activated. Unlimited profiles.')}</p>
-                            <button onClick={handleDeactivateLicense} className="text-[0.7rem] text-red-400 hover:underline">
-                                {t('license.deactivateBtn', 'Deactivate License')}
-                            </button>
+                            {confirmDeactivate ? (
+                                <div className="flex items-center gap-3 mt-1">
+                                    <span className="text-[0.72rem] text-[var(--fg)]">
+                                        {t('license.deactivateConfirm', 'Your license key will be permanently lost. This action cannot be undone.')}
+                                    </span>
+                                    <button
+                                        onClick={handleDeactivateLicense}
+                                        className="text-[0.72rem] font-semibold text-white bg-red-500 hover:bg-red-600 px-2.5 py-1 rounded transition"
+                                    >
+                                        {t('license.deactivateConfirmYes', 'Yes, deactivate')}
+                                    </button>
+                                    <button
+                                        onClick={() => setConfirmDeactivate(false)}
+                                        className="text-[0.72rem] text-[var(--muted)] hover:text-[var(--fg)] transition"
+                                    >
+                                        {t('common.cancel', 'Cancel')}
+                                    </button>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => setConfirmDeactivate(true)}
+                                    className="text-[0.7rem] text-red-400 hover:underline"
+                                >
+                                    {t('license.deactivateBtn', 'Deactivate License')}
+                                </button>
+                            )}
                         </div>
                     ) : (
                         <>
