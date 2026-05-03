@@ -922,26 +922,26 @@ function BulkRunModal({ script, profiles = [], onClose }) {
                                 <span className="text-red-500 text-[1.5rem]">⚠️</span>
                             </div>
                             <div>
-                                <h3 className="text-[1.1rem] font-bold text-red-500">Cảnh Báo Đạo Đức / Security</h3>
+                                <h3 className="text-[1.1rem] font-bold text-red-500">Ethics Warning / Security</h3>
                                 <p className="text-[0.75rem] text-rose-300">High-Concurrency Execution Alert</p>
                             </div>
                         </div>
                         <div className="text-[0.8rem] mb-5 space-y-2 text-rose-100">
-                            <p>Bạn đang chuẩn bị chạy kịch bản tự động trên <strong>{selectedIds.length}</strong> tab trình duyệt cùng lúc.</p>
-                            <p className="font-semibold text-white">Rủi ro tiềm ẩn:</p>
+                            <p>You are about to run an automation script on <strong>{selectedIds.length}</strong> browser tabs simultaneously.</p>
+                            <p className="font-semibold text-white">Potential risks:</p>
                             <ul className="list-disc pl-5 opacity-90 space-y-1">
-                                <li><strong>Tốn tải băng thông (Bandwidth abuse)</strong> của máy chủ đích.</li>
-                                <li>Hành vi của bạn có thể vô tình cấu thành một cuộc tấn công <strong>Từ Chối Dịch Vụ (DDoS)</strong> nếu kịch bản liên tục tải lại hoặc request API nhanh.</li>
-                                <li>Mọi hành vi vi phạm đạo đức đều được ghi lại vào nhật ký Audit không thể xóa.</li>
+                                <li><strong>Bandwidth abuse</strong> of the target server.</li>
+                                <li>Your actions may inadvertently constitute a <strong>Denial-of-Service (DDoS) attack</strong> if the script repeatedly reloads or makes rapid API requests.</li>
+                                <li>Any unethical behavior is recorded in the non-deletable Audit log.</li>
                             </ul>
-                            <p className="mt-3 text-[0.75rem] opacity-75">Bạn có chắc chắn muốn phát động phiên chạy này không?</p>
+                            <p className="mt-3 text-[0.75rem] opacity-75">Are you sure you want to start this execution session?</p>
                         </div>
                         <div className="flex gap-3 justify-end mt-2">
                             <button className="px-4 py-2 rounded flex-1 text-[0.8rem] font-medium hover:bg-white/10 text-white transition border border-white/20" onClick={() => setShowWarning(false)}>
-                                Hủy bỏ (Cancel)
+                                Cancel
                             </button>
                             <button className="px-4 py-2 flex-1 rounded text-[0.8rem] font-bold text-white transition-all hover:brightness-125" style={{ background: '#ef4444', boxShadow: '0 0 15px rgba(239, 68, 68, 0.4)' }} onClick={executeRun}>
-                                Tôi chịu trách nhiệm (Run)
+                                I Accept Responsibility (Run)
                             </button>
                         </div>
                     </div>
@@ -1228,11 +1228,11 @@ function TaskLogsTab({ profiles = [] }) {
 
     const handleRunAgain = async () => {
         if (!selected) return;
-        // Task tạo từ API: có scriptContent nhưng không có scriptId → chạy trực tiếp
+        // Task created from API: has scriptContent but no scriptId → run directly
         if (!selected.scriptId) {
             try {
                 await window.electronAPI.runTask(selected.id);
-                // Reload danh sách và cập nhật task đang chọn
+                // Reload list and update currently selected task
                 const updatedList = await window.electronAPI.getTaskLogs();
                 if (Array.isArray(updatedList)) {
                     setTasks(updatedList);
@@ -1246,7 +1246,7 @@ function TaskLogsTab({ profiles = [] }) {
             } catch {}
             return;
         }
-        // Task từ script library → mở modal
+        // Task from script library → open modal
         try {
             const res = await window.electronAPI.getScript(selected.scriptId);
             if (res?.success && res.script) {

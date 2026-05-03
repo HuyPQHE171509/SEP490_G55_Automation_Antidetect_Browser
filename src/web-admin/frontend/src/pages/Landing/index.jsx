@@ -298,13 +298,13 @@ function PricingCard({ tier, index, isAuthenticated, isPro, isTrial, navigate, s
 
       {/* CTA button */}
       {isPro && tier.highlight ? (
-        // Đã có license (trial hoặc paid) — hiện badge đã kích hoạt
+        // Already has license (trial or paid) — show activated badge
         <div className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm bg-emerald-500/15 border border-emerald-500/40 text-emerald-400">
           <span className="material-symbols-outlined text-base">verified</span>
           {isTrial ? 'Trial Active' : 'Your Current Plan'}
         </div>
       ) : isPro && !tier.highlight ? (
-        // Đã có license — ẩn nút free
+        // Already has license — hide free button
         <div className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl text-sm text-slate-600 border border-slate-700/40">
           Downgrade not available
         </div>

@@ -7,6 +7,9 @@ import activateLicense from '../api/activate-license.js';
 import userStatus from '../api/user-status.js';
 import myLicense from '../api/my-license.js';
 import requestTrial from '../api/request-trial.js';
+import verifyMachine from '../api/verify-machine.js';
+import deactivateMachine from '../api/deactivate-machine.js';
+import reactivateMachine from '../api/reactivate-machine.js';
 import { downloadRedirect, downloadStats, downloadInfo } from '../api/download.js';
 import adminConfig from '../api/admin/config.js';
 import adminStats from '../api/admin/stats.js';
@@ -38,6 +41,9 @@ app.post('/api/activate-license', activateLicense);
 app.get('/api/user-status', userStatus);
 app.post('/api/my-license', myLicense);
 app.post('/api/request-trial', requestTrial);
+app.post('/api/verify-machine', verifyMachine);
+app.post('/api/deactivate-machine', deactivateMachine);
+app.post('/api/reactivate-machine', reactivateMachine);
 
 // Download tracking + redirect
 app.get('/api/download/info', downloadInfo);
