@@ -203,19 +203,19 @@ export default function ProxyManager() {
     return (
         <div className="w-full h-full flex flex-col p-4" style={{ background: 'var(--bg)' }}>
             {/* ── Header ── */}
-            <div className="flex justify-between items-center mb-4">
-                <div className="flex items-center gap-3">
+            <div className="flex justify-between items-center mb-4 gap-2 flex-wrap">
+                <div className="flex items-center gap-3 shrink-0">
                     <Shield size={22} style={{ color: 'var(--primary)' }} />
                     <h1 className="text-[1.15rem] font-bold" style={{ color: 'var(--fg)' }}>Proxy Pool</h1>
                 </div>
-                <div className="flex items-center gap-2">
-                    <button className="btn btn-secondary text-[0.72rem] flex items-center gap-1" onClick={() => setShowImport(true)}>
+                <div className="flex items-center gap-2 shrink-0">
+                    <button className="btn btn-secondary text-[0.72rem] flex items-center gap-1 whitespace-nowrap" onClick={() => setShowImport(true)}>
                         <Upload size={13} /> Import
                     </button>
-                    <button className="btn btn-secondary text-[0.72rem] flex items-center gap-1" onClick={handleExport} disabled={proxies.length === 0}>
+                    <button className="btn btn-secondary text-[0.72rem] flex items-center gap-1 whitespace-nowrap" onClick={handleExport} disabled={proxies.length === 0}>
                         <Download size={13} /> Export
                     </button>
-                    <button className="btn btn-success text-[0.72rem] flex items-center gap-1" onClick={() => { setEditingProxy(null); setShowForm(true); }}>
+                    <button className="btn btn-success text-[0.72rem] flex items-center gap-1 whitespace-nowrap" onClick={() => { setEditingProxy(null); setShowForm(true); }}>
                         <Plus size={14} /> Add Proxy
                     </button>
                 </div>
@@ -340,18 +340,27 @@ export default function ProxyManager() {
                                                     </code>
                                                 </td>
                                                 <td className="px-3 py-2">
-                                                    <StatusBadge status={p.status} />
+                                                    <StatusBadge status={p.status} latency={p.latency} lastChecked={p.lastChecked} />
                                                 </td>
                                                 <td className="px-3 py-2">
-                                                    {p.country
-                                                        ? <span className="text-[0.75rem] flex items-center gap-1" style={{ color: 'var(--fg)' }}>
-                                                            {p.countryCode && p.countryCode.length === 2
-                                                                ? <span style={{ fontSize: '1rem' }}>{String.fromCodePoint(...[...p.countryCode.toUpperCase()].map(c => 0x1F1E6 - 65 + c.charCodeAt(0)))}</span>
-                                                                : <Globe size={12} />
-                                                            }
-                                                            {p.country}
-                                                          </span>
-                                                        : <span className="text-[0.72rem]" style={{ color: 'var(--muted)' }}>—</span>}
+                                                    {p.country || p.countryCode ? (
+                                                        <div className="flex flex-col gap-0.5">
+                                                            <span className="text-[0.75rem] flex items-center gap-1.5" style={{ color: 'var(--fg)' }}>
+                                                                {p.countryCode && p.countryCode.length === 2
+                                                                    ? <span style={{ fontSize: '1rem', lineHeight: 1 }} title={p.countryCode.toUpperCase()}>
+                                                                        {String.fromCodePoint(...[...p.countryCode.toUpperCase()].map(c => 0x1F1E6 - 65 + c.charCodeAt(0)))}
+                                                                      </span>
+                                                                    : <Globe size={12} />
+                                                                }
+                                                                <span className="font-medium">{p.country || p.countryCode}</span>
+                                                            </span>
+                                                            {p.city && (
+                                                                <span className="text-[0.62rem] pl-[22px]" style={{ color: 'var(--muted)' }}>{p.city}</span>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-[0.72rem]" style={{ color: 'var(--muted)' }}>—</span>
+                                                    )}
                                                 </td>
                                                 <td className="px-3 py-2 text-right">
                                                     <div className="flex gap-1 justify-end items-center">
@@ -418,18 +427,44 @@ export default function ProxyManager() {
     );
 }
 
+/* ── Relative time helper ── */
+function relativeTime(iso) {
+    if (!iso) return null;
+    const t = new Date(iso).getTime();
+    if (!Number.isFinite(t)) return null;
+    const diff = Math.max(0, Date.now() - t);
+    if (diff < 60_000) return 'just now';
+    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+    if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+    if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)}d ago`;
+    return new Date(iso).toLocaleDateString();
+}
+
 /* ── Status Badge Component ── */
-function StatusBadge({ status }) {
+function StatusBadge({ status, latency, lastChecked }) {
     const config = {
         alive: { icon: <CheckCircle2 size={12} />, label: 'Alive', color: '#10b981', bg: 'rgba(16,185,129,0.1)' },
         dead: { icon: <XCircle size={12} />, label: 'Dead', color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
     };
     const c = config[status] || { icon: <HelpCircle size={12} />, label: 'Unchecked', color: '#6b7280', bg: 'rgba(107,114,128,0.1)' };
+    const showLatency = status === 'alive' && Number.isFinite(Number(latency));
+    const rel = relativeTime(lastChecked);
+    const fullTs = lastChecked ? new Date(lastChecked).toLocaleString() : '';
     return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.68rem] font-semibold"
-            style={{ background: c.bg, color: c.color }}>
-            {c.icon} {c.label}
-        </span>
+        <div className="flex flex-col gap-0.5">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.68rem] font-semibold w-fit"
+                style={{ background: c.bg, color: c.color }}>
+                {c.icon} {c.label}
+                {showLatency && (
+                    <span className="font-normal opacity-80 ml-0.5">· {Math.round(latency)}ms</span>
+                )}
+            </span>
+            {rel && (
+                <span className="text-[0.6rem] pl-2" style={{ color: 'var(--muted)' }} title={fullTs}>
+                    checked {rel}
+                </span>
+            )}
+        </div>
     );
 }
 

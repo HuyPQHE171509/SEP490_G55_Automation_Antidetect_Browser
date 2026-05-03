@@ -754,9 +754,6 @@ export default function ProfileList({
                   />
                 </div>
               </div>
-              <div className="pl-modal-preview">
-                Preview: <strong>{bulkPrefix || 'Profile'} 1</strong> ... <strong>{bulkPrefix || 'Profile'} {bulkCount}</strong>
-              </div>
             </div>
             <div className="pl-modal-footer">
               <button className="pl-btn pl-btn-edit" onClick={() => setShowBulkCreate(false)} disabled={bulkCreating}>Cancel</button>

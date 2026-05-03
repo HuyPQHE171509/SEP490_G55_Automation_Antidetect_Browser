@@ -280,10 +280,7 @@ const messages = {
     'automation.section': 'Tự động hoá',
     'automation.enabled': 'Bật tự động hoá',
     'automation.runOnLaunch': 'Chạy steps sau khi launch',
-    'automation.schedule': 'Lịch (cron)',
-    'automation.schedule.enabled': 'Bật lịch lặp lại',
     'automation.steps': 'Steps (JSON)',
-    'automation.hint.schedule': 'Biểu thức cron 5 phần, ví dụ: */5 * * * * (mỗi 5 phút). Để trống nếu không dùng.',
     'automation.hint.steps': 'Mảng JSON các steps: navigate|wait|eval. Ví dụ: [{"action":"navigate","url":"https://example.com"}]',
 
     // Proxies
@@ -616,10 +613,7 @@ const messages = {
     'automation.section': 'Automation',
     'automation.enabled': 'Enable automation',
     'automation.runOnLaunch': 'Run steps after launch',
-    'automation.schedule': 'Schedule (cron)',
-    'automation.schedule.enabled': 'Enable recurring schedule',
     'automation.steps': 'Steps (JSON)',
-    'automation.hint.schedule': 'Cron expression (5 fields), e.g. */5 * * * * (every 5 min). Leave blank if not used.',
     'automation.hint.steps': 'JSON array of steps: navigate|wait|eval. Example: [{"action":"navigate","url":"https://example.com"}]',
 
     // Proxies

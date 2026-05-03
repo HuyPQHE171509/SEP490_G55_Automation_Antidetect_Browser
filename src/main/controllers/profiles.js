@@ -43,6 +43,13 @@ async function runPlaywrightInstall(browser = 'chromium') {
   });
 }
 
+/**
+ * Phát sóng (broadcast) trạng thái tất cả profile đang chạy đến mọi cửa sổ Electron.
+ * Vai trò: Đồng bộ hóa giao diện người dùng (UI) theo thời gian thực — mỗi khi có profile
+ * khởi động, dừng, hoặc thay đổi trạng thái, hàm này gửi sự kiện 'running-map-changed'
+ * kèm theo bản đồ wsEndpoint, map trạng thái chi tiết (STARTING/RUNNING/STOPPED)
+ * và cờ headless để UI ẩn/hiện nút Live Screen tương ứng.
+ */
 function broadcastRunningMap() {
   const { BrowserWindow } = require('electron');
   const map = Object.fromEntries(
@@ -60,18 +67,41 @@ function broadcastRunningMap() {
   }
 }
 
+/**
+ * Khởi động trình duyệt cho một profile chống phát hiện (anti-detect).
+ * Các bước chính:
+ *   1. Kiểm tra lock (launchingProfiles Set) — tránh khởi động đồng thời cùng một profile
+ *   2. Đọc thông tin profile từ storage (readProfiles)
+ *   3. Chuẩn bị Chrome launch args — các anti-detect flags (tắt AutomationControlled, v.v.)
+ *   4. Khởi động proxy forwarder nếu proxy có xác thực hoặc là SOCKS
+ *   5. Tìm Chrome binary theo thứ tự ưu tiên: vendor → system → bundled Playwright
+ *   6. Gọi Playwright launch (Chromium) hoặc launchServer/connect (Firefox/Camoufox)
+ *   7. Inject fingerprint qua applyFingerprintInitScripts (UA, ngôn ngữ, timezone, WebGL, v.v.)
+ *   8. Lưu profile đang chạy vào runningProfiles Map với engine, context, wsEndpoint
+ *   9. Broadcast trạng thái RUNNING về UI qua broadcastRunningMap()
+ */
 async function launchProfileInternal(profileId, options = {}) {
+  // Bước 1a: Nếu profile đã đang chạy, trả về ngay wsEndpoint hiện tại — tránh khởi động trùng lặp
   if (runningProfiles.has(profileId)) {
     return { success: true, wsEndpoint: runningProfiles.get(profileId).wsEndpoint };
   }
+  // Bước 1b: Kiểm tra lock — nếu profile đang trong quá trình khởi động thì từ chối yêu cầu mới
   if (launchingProfiles.has(profileId)) {
     return { success: false, error: 'Profile is already starting up' };
   }
+  // Bước 1b.5: Kiểm tra giới hạn số lượng browser đồng thời (maxConcurrentBrowsers từ Settings)
+  const { maxConcurrentBrowsers } = loadSettings();
+  const maxAllowed = Math.max(1, parseInt(maxConcurrentBrowsers, 10) || 5);
+  if (runningProfiles.size + launchingProfiles.size >= maxAllowed) {
+    return { success: false, error: `Đã đạt giới hạn ${maxAllowed} browser đồng thời. Dừng profile khác trước khi mở thêm.` };
+  }
+  // Bước 1c: Đặt lock và cập nhật trạng thái sang STARTING, broadcast ngay về UI
   launchingProfiles.add(profileId);
   const instanceId = generateInstanceId();
   setProfileStatus(profileId, 'STARTING', instanceId);
   broadcastRunningMap();
   try {
+    // Bước 2: Đọc toàn bộ danh sách profile từ storage và tìm profile theo ID
     const profiles = readProfiles();
     const profile = profiles.find(p => p.id === profileId);
     if (!profile) return { success: false, error: 'Profile not found' };
@@ -108,6 +138,8 @@ async function launchProfileInternal(profileId, options = {}) {
     const pwEngine = isFirefox ? firefox : chromium;
 
     const fp = profile.fingerprint || {};
+    // Bước 3: Chuẩn bị danh sách Chrome launch args — tắt các tín hiệu tự động hóa (anti-detect flags)
+    // Firefox không cần args này vì sử dụng about:config prefs riêng
     const args = isFirefox ? [] : [
       '--lang=en-US',
       // ── Core anti-detect: hide automation signals ──
@@ -166,7 +198,9 @@ async function launchProfileInternal(profileId, options = {}) {
       const wantGeo = Number.isFinite(Number(g.latitude)) && Number.isFinite(Number(g.longitude));
       if (applyGeo && wantGeo) permissions.push('geolocation');
     } catch { }
-    // Proxy handling
+    // Bước 4: Xử lý proxy — nếu proxy có xác thực (username/password) hoặc là SOCKS,
+    // khởi động proxy forwarder nội bộ để Playwright kết nối qua localhost thay vì trực tiếp.
+    // Điều này giải quyết giới hạn của Chromium: không hỗ trợ SOCKS với xác thực trực tiếp.
     let proxy;
     let forwarder = null;
     if (settings.proxy?.server) {
@@ -193,6 +227,10 @@ async function launchProfileInternal(profileId, options = {}) {
         proxy = { server: serverUrl };
       }
     }
+    // Bước 5: Tìm Chrome binary theo thứ tự ưu tiên:
+    //   1) Thư mục vendor (vendor/chrome-win/Chrome-bin/chrome.exe) — phiên bản đóng gói sẵn
+    //   2) Chrome/Edge đã cài đặt trên hệ thống (system-installed)
+    //   3) Chromium bundled của Playwright — phương án dự phòng cuối cùng (icon xanh Chromium)
     // Resolve Chrome binary for Chromium engine.
     // Priority: 1) vendor folder  2) system-installed Chrome/Edge  3) bundled Playwright Chromium (last resort).
     let executablePath;
@@ -266,6 +304,10 @@ async function launchProfileInternal(profileId, options = {}) {
       'general.warnOnAboutConfig': false,
     } : undefined;
 
+    // Bước 6: Gọi Playwright để khởi động trình duyệt
+    //   - Chromium: dùng pwEngine.launch() ở pipe mode (không mở WebSocket ra ngoài)
+    //   - Firefox/Camoufox: dùng launchServer() sau đó connect() qua wsEndpoint
+    //   Nếu lỗi "not installed", tự động chạy `npx playwright install` rồi thử lại
     let server;
     let browser;
     try {
@@ -364,6 +406,11 @@ async function launchProfileInternal(profileId, options = {}) {
     if (fs.existsSync(statePath)) { try { contextOptions.storageState = statePath; } catch { } }
     const context = await browser.newContext(contextOptions);
     if (permissions.length) { await context.grantPermissions(permissions); }
+    // Bước 7: Inject fingerprint qua applyFingerprintInitScripts —
+    // Tiêm các init script vào mọi trang mới để giả mạo (spoof) các thuộc tính trình duyệt:
+    // UserAgent, Navigator (platform, plugins, hardwareConcurrency), WebGL renderer/vendor,
+    // Canvas noise, AudioContext fingerprint, Screen resolution, Fonts, v.v.
+    // safeMode=true sẽ bỏ qua Object.defineProperty overrides (dùng cho Cloudflare Enterprise).
     // Apply fingerprint init scripts (reuse safeMode from context options above)
     try {
       const { applyFingerprintInitScripts } = require('../engine/fingerprintInit');
@@ -379,6 +426,7 @@ async function launchProfileInternal(profileId, options = {}) {
     const rawSavedTabs = loadSessionTabs(profileId);
     // Only restore valid http/https URLs — filter out about:blank, en-us, and other garbage
     const savedTabs = (rawSavedTabs || []).filter(u => typeof u === 'string' && /^https?:\/\//i.test(u));
+    appendLog(profileId, `Session tabs: found ${savedTabs.length} saved tab(s)${savedTabs.length > 0 ? ': ' + savedTabs.join(', ') : ''}`);
     let page;
     if (savedTabs && savedTabs.length > 0) {
       appendLog(profileId, `Restoring ${savedTabs.length} saved tabs...`);
@@ -423,6 +471,16 @@ async function launchProfileInternal(profileId, options = {}) {
       appendLog(profileId, `Opened page: ${startUrl}`);
     }
 
+    // Track last-known URL per page so we can save session tabs when user closes browser window
+    const pageUrls = new Map();
+    const trackPageUrls = (p) => {
+      try {
+        const update = () => { try { const u = p.url(); if (u && u !== 'about:blank' && !/^chrome(-error)?:\/\//.test(u)) pageUrls.set(p, u); } catch {} };
+        update();
+        p.on('framenavigated', f => { if (f === p.mainFrame()) update(); });
+      } catch {}
+    };
+
     const saveState = async () => {
       try {
         const state = await context.storageState();
@@ -435,7 +493,8 @@ async function launchProfileInternal(profileId, options = {}) {
       }
       try {
         const pages = context.pages();
-        if (pages && pages.length > 0) saveSessionTabs(profileId, pages.map(p => p.url()));
+        const urlsToSave = pages.length > 0 ? pages.map(p => p.url()) : [...pageUrls.values()].filter(u => u);
+        if (urlsToSave.length > 0) saveSessionTabs(profileId, urlsToSave);
       } catch { }
     };
     // Cleanup helper
@@ -459,14 +518,22 @@ async function launchProfileInternal(profileId, options = {}) {
       try {
         const pages = context.pages();
         if (!pages || pages.length === 0) {
+          const trackedUrls = [...pageUrls.values()].filter(u => /^https?:\/\//i.test(u));
+          if (trackedUrls.length > 0) {
+            try { saveSessionTabs(profileId, trackedUrls); appendLog(profileId, `Saved ${trackedUrls.length} session tab(s) on browser close`); } catch {}
+          }
           appendLog(profileId, 'All browser pages closed by user');
           cleanupPlaywright('All pages closed — browser stopped');
         }
       } catch { cleanupPlaywright('Page close check failed — browser stopped'); }
     };
-    try { for (const p of context.pages()) { p.on('close', onPageClose); } } catch { }
-    context.on('page', (newPage) => { try { newPage.on('close', onPageClose); } catch { } });
+    try { for (const p of context.pages()) { trackPageUrls(p); p.on('close', onPageClose); } } catch { }
+    context.on('page', (newPage) => { try { trackPageUrls(newPage); newPage.on('close', onPageClose); } catch { } });
+    // Bước 8: Lưu thông tin phiên đang chạy vào runningProfiles Map —
+    // Map này là nguồn dữ liệu thực đơn nhất (single source of truth) cho mọi handler
+    // cần truy cập browser/context của một profile đang hoạt động.
     runningProfiles.set(profileId, { engine: 'playwright', server, browser, context, wsEndpoint, forwarder, headless: !!headless, startedAt: Date.now() });
+    // Bước 9: Cập nhật trạng thái sang RUNNING và broadcast về tất cả cửa sổ UI
     setProfileStatus(profileId, 'RUNNING', instanceId);
     broadcastRunningMap();
     // Auto-start screencast for headless Playwright profiles
@@ -582,23 +649,37 @@ async function runAutomationPostLaunch(profile, launchCtx) {
   }
 }
 
+/**
+ * Dừng trình duyệt đang chạy của một profile cụ thể.
+ * Các bước thực hiện:
+ *   1. Kiểm tra xem profile có đang chạy không — nếu không, trả về ngay với thành công
+ *   2. Cập nhật trạng thái sang STOPPING và broadcast về UI
+ *   3. Dừng luồng screencast (nếu đang phát) để tránh zombie loop
+ *   4. Lưu storage state (cookies, localStorage) vào file trước khi đóng
+ *   5. Đóng context → browser → server theo thứ tự an toàn
+ *   6. Xóa profile khỏi runningProfiles Map, cập nhật trạng thái STOPPED
+ *   7. Broadcast trạng thái mới về tất cả cửa sổ UI
+ */
 async function stopProfileInternal(profileId) {
   try {
+    // Bước 1: Kiểm tra profile có đang chạy không
     const running = runningProfiles.get(profileId);
     if (!running) {
       setProfileStatus(profileId, 'STOPPED');
       broadcastRunningMap();
       return { success: true, message: 'Profile not running' };
     }
+    // Bước 2: Đánh dấu STOPPING và thông báo UI ngay lập tức
     setProfileStatus(profileId, 'STOPPING');
     broadcastRunningMap();
 
-    // Stop screencast loop before cleanup (prevents zombie loops)
+    // Bước 3: Stop screencast loop before cleanup (prevents zombie loops)
     try {
       const { stopScreencast } = require('../engine/screencast');
       stopScreencast(profileId);
     } catch { }
 
+    // Bước 4: Lưu toàn bộ storage state (cookies, localStorage, sessionStorage) ra file
     // Playwright: close context/browser/server
     const { server, context, browser } = running;
     try {
@@ -607,12 +688,24 @@ async function stopProfileInternal(profileId) {
       fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
       appendLog(profileId, 'Saved storage state before stop');
     } catch (e) { appendLog(profileId, `Failed saving state on stop: ${e.message}`); }
+    // Lưu session tabs TRƯỚC khi đóng context — sau khi context.close() thì pages() = []
+    try {
+      const { saveSessionTabs } = require('../storage/sessionTabs');
+      const pages = context.pages();
+      if (pages && pages.length > 0) {
+        saveSessionTabs(profileId, pages.map(p => p.url()));
+        appendLog(profileId, `Saved ${pages.length} session tab(s) before stop`);
+      }
+    } catch (e) { appendLog(profileId, `Failed saving session tabs on stop: ${e.message}`); }
+    // Bước 5: Đóng context → browser → server theo thứ tự từ trong ra ngoài
     try { await context.close(); } catch { }
     try { await browser?.close?.(); } catch { }
     try { await server?.close?.(); } catch { }
+    // Bước 6: Xóa khỏi Map và cập nhật trạng thái STOPPED
     runningProfiles.delete(profileId);
     setProfileStatus(profileId, 'STOPPED');
     appendLog(profileId, 'Stopped profile');
+    // Bước 7: Broadcast trạng thái mới về UI
     broadcastRunningMap();
     return { success: true };
   } catch (error) {
@@ -632,6 +725,7 @@ async function stopAllProfilesInternal() {
       if (!running) continue;
       const { server, context, browser } = running;
       try { const state = await context.storageState(); fs.writeFileSync(storageStatePath(id), JSON.stringify(state, null, 2)); appendLog(id, 'Saved storage state before stop-all'); } catch (e) { appendLog(id, `Failed save state on stop-all: ${e.message}`); }
+      try { const { saveSessionTabs } = require('../storage/sessionTabs'); const pages = context.pages(); if (pages && pages.length > 0) { saveSessionTabs(id, pages.map(p => p.url())); appendLog(id, `Saved ${pages.length} session tab(s) before stop-all`); } } catch (e) { appendLog(id, `Failed saving session tabs on stop-all: ${e.message}`); }
       try { await context.close(); } catch { }
       try { await browser?.close?.(); } catch { }
       try { await server?.close?.(); } catch { }
@@ -882,6 +976,9 @@ module.exports = {
   getProfileLogInternal,
   getCookiesInternal,
   importCookiesInternal,
+  deleteCookieInternal,
+  clearCookiesInternal,
+  editCookieInternal,
   getStorageStateInternal,
   getProfileWsInternal,
   getRunningMapInternal,

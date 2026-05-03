@@ -78,6 +78,7 @@ const API_REF = [
 
 const totalMethods = API_REF.reduce((s, c) => s + c.methods.length, 0);
 
+
 const DEFAULT_CODE = `// Available globals: page, cdp, profileId, log()
 // Type 'page.' or 'cdp.' to see autocomplete
 
@@ -241,8 +242,8 @@ function ScriptsTab({ profiles }) {
         try {
             const res = await window.electronAPI.listScripts();
             const list = Array.isArray(res) ? res : (res?.scripts || []);
-            const exportData = list.map(({ id, name, description, code, cronSchedule, cronEnabled, cronProfileId }) =>
-                ({ id, name, description, code, cronSchedule, cronEnabled, cronProfileId })
+            const exportData = list.map(({ id, name, description, code }) =>
+                ({ id, name, description, code })
             );
             const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
             const a = document.createElement('a');
@@ -280,9 +281,9 @@ function ScriptsTab({ profiles }) {
     const filtered = scripts.filter(s => !filter || (s.name || '').toLowerCase().includes(filter.toLowerCase()));
 
     return (
-        <div className="flex-1 flex flex-row rounded-lg gap-[1px] overflow-hidden" style={{ background: 'var(--border)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+        <div className="flex-1 flex flex-row rounded-lg gap-[1px] overflow-x-auto overflow-y-hidden" style={{ background: 'var(--border)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
             {/* ═══ Left Sidebar — Script Cards ═══ */}
-            <div className="w-[280px] flex flex-col" style={{ background: 'var(--card)' }}>
+            <div className="w-[280px] shrink-0 flex flex-col" style={{ background: 'var(--card)' }}>
                 {/* Search + New */}
                 <div className="px-3 py-2 flex gap-2 items-center" style={{ borderBottom: '1px solid var(--border)' }}>
                     <div className="flex-1 relative">
@@ -460,7 +461,7 @@ function ScriptsTab({ profiles }) {
                     </div>
 
                     {/* Right: Code Editor */}
-                    <div className="flex-1 flex flex-col" style={{ background: 'var(--card)' }}>
+                    <div className="flex-1 flex flex-col" style={{ minWidth: '300px', background: 'var(--card)' }}>
                         <div className="flex-1 relative" style={{ minHeight: 200 }}>
                             <Editor height="100%" language="javascript" theme="vs-dark"
                                 value={editing.code} onChange={v => setEditing(p => ({ ...p, code: v || '' }))}
@@ -510,7 +511,7 @@ function ScriptsTab({ profiles }) {
                             </div>
                         </div>
                         <p className="text-[0.75rem] mb-4" style={{ color: 'var(--muted)' }}>
-                            This action cannot be undone. The script will be permanently deleted.
+                            This action cannot be undone. The script and its schedule will be permanently deleted.
                         </p>
                         <div className="flex gap-2 justify-end">
                             <button className="btn btn-secondary text-[0.75rem] px-4" onClick={() => setDeleteConfirmId(null)}>Cancel</button>
@@ -793,26 +794,26 @@ function BulkRunModal({ script, profiles = [], onClose }) {
                                 <span className="text-red-500 text-[1.5rem]">⚠️</span>
                             </div>
                             <div>
-                                <h3 className="text-[1.1rem] font-bold text-red-500">Cảnh Báo Đạo Đức / Security</h3>
+                                <h3 className="text-[1.1rem] font-bold text-red-500">Ethics Warning / Security</h3>
                                 <p className="text-[0.75rem] text-rose-300">High-Concurrency Execution Alert</p>
                             </div>
                         </div>
                         <div className="text-[0.8rem] mb-5 space-y-2 text-rose-100">
-                            <p>Bạn đang chuẩn bị chạy kịch bản tự động trên <strong>{selectedIds.length}</strong> tab trình duyệt cùng lúc.</p>
-                            <p className="font-semibold text-white">Rủi ro tiềm ẩn:</p>
+                            <p>You are about to run an automation script on <strong>{selectedIds.length}</strong> browser tabs simultaneously.</p>
+                            <p className="font-semibold text-white">Potential risks:</p>
                             <ul className="list-disc pl-5 opacity-90 space-y-1">
-                                <li><strong>Tốn tải băng thông (Bandwidth abuse)</strong> của máy chủ đích.</li>
-                                <li>Hành vi của bạn có thể vô tình cấu thành một cuộc tấn công <strong>Từ Chối Dịch Vụ (DDoS)</strong> nếu kịch bản liên tục tải lại hoặc request API nhanh.</li>
-                                <li>Mọi hành vi vi phạm đạo đức đều được ghi lại vào nhật ký Audit không thể xóa.</li>
+                                <li><strong>Bandwidth abuse</strong> of the target server.</li>
+                                <li>Your actions may inadvertently constitute a <strong>Denial-of-Service (DDoS) attack</strong> if the script repeatedly reloads or makes rapid API requests.</li>
+                                <li>Any unethical behavior is recorded in the non-deletable Audit log.</li>
                             </ul>
-                            <p className="mt-3 text-[0.75rem] opacity-75">Bạn có chắc chắn muốn phát động phiên chạy này không?</p>
+                            <p className="mt-3 text-[0.75rem] opacity-75">Are you sure you want to start this execution session?</p>
                         </div>
                         <div className="flex gap-3 justify-end mt-2">
                             <button className="px-4 py-2 rounded flex-1 text-[0.8rem] font-medium hover:bg-white/10 text-white transition border border-white/20" onClick={() => setShowWarning(false)}>
-                                Hủy bỏ (Cancel)
+                                Cancel
                             </button>
                             <button className="px-4 py-2 flex-1 rounded text-[0.8rem] font-bold text-white transition-all hover:brightness-125" style={{ background: '#ef4444', boxShadow: '0 0 15px rgba(239, 68, 68, 0.4)' }} onClick={executeRun}>
-                                Tôi chịu trách nhiệm (Run)
+                                I Accept Responsibility (Run)
                             </button>
                         </div>
                     </div>
@@ -1099,11 +1100,11 @@ function TaskLogsTab({ profiles = [] }) {
 
     const handleRunAgain = async () => {
         if (!selected) return;
-        // Task tạo từ API: có scriptContent nhưng không có scriptId → chạy trực tiếp
+        // Task created from API: has scriptContent but no scriptId → run directly
         if (!selected.scriptId) {
             try {
                 await window.electronAPI.runTask(selected.id);
-                // Reload danh sách và cập nhật task đang chọn
+                // Reload list and update currently selected task
                 const updatedList = await window.electronAPI.getTaskLogs();
                 if (Array.isArray(updatedList)) {
                     setTasks(updatedList);
@@ -1117,7 +1118,7 @@ function TaskLogsTab({ profiles = [] }) {
             } catch {}
             return;
         }
-        // Task từ script library → mở modal
+        // Task from script library → open modal
         try {
             const res = await window.electronAPI.getScript(selected.scriptId);
             if (res?.success && res.script) {
