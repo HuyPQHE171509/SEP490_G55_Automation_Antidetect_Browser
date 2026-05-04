@@ -385,7 +385,9 @@ async function launchProfileInternal(profileId, options = {}) {
       }
     }
     if (applyTz) contextOptions.timezoneId = fp.timezone || settings.timezone || 'UTC';
-    if (applyUA && fp.userAgent) contextOptions.userAgent = fp.userAgent;
+    // Do NOT set contextOptions.userAgent — Playwright calls Emulation.setUserAgentOverride
+    // via CDP which is detectable by Cloudflare even when the UA value matches native.
+    // UA spoofing is handled via JS prototype override in fingerprintInit.js instead.
     // Apply viewport and device scale like CDP DeviceMetricsOverride
     try {
       if (applyViewport) {

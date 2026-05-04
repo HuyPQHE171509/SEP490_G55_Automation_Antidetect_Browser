@@ -31,7 +31,6 @@ function hashCode(str) {
 async function applyFingerprintInitScripts(context, profile, settings, { overrideUserAgent, safeMode, isFirefox } = {}) {
   const fp = (profile && profile.fingerprint) || {};
   const adv = (settings && settings.advanced) || {};
-  const locale = fp.language || settings?.language || 'en-US';
   const userAgent = overrideUserAgent || fp.userAgent || undefined;
   // Use 0 as sentinel = "use real hardware value, don't spoof"
   const cpuCores = Number(settings?.cpuCores) || 0;
@@ -58,7 +57,6 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
   const applyNavigator = !safeMode && apply.navigator !== false && identitySectionEnabled;
   const applyUA = !safeMode && apply.userAgent !== false && identitySectionEnabled;
   const applyWebgl = !safeMode && apply.webgl !== false && webglSectionEnabled;
-  const applyLang = !safeMode && apply.language !== false && identitySectionEnabled;
   const applyViewport = !safeMode && apply.viewport !== false && displaySectionEnabled;
   const applyCanvas = !safeMode && apply.canvas !== false && fp.canvas !== false && canvasSectionEnabled;
   const applyAudio = !safeMode && apply.audio !== false && fp.audio !== false && audioSectionEnabled;
@@ -325,17 +323,35 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 2. NAVIGATOR: platform, DNT, touchPoints, languages, plugins
+  // 2. NAVIGATOR: platform, DNT, touchPoints, plugins
+  //    NOTE: userAgent, language, languages are set via Playwright CDP context
+  //    options (contextOptions.userAgent / contextOptions.locale) — those use
+  //    Emulation.setUserAgentOverride / setLocaleOverride at the browser level,
+  //    producing native descriptors. Overriding them again here with
+  //    Object.defineProperty creates a detectable tampered descriptor that
+  //    Cloudflare checks via Object.getOwnPropertyDescriptor(navigator, 'userAgent').
   // ═══════════════════════════════════════════════════════════════════════
   if (applyNavigator) {
     try {
-      await context.addInitScript(({ adv, primaryLang, flags }) => {
+      await context.addInitScript(({ adv, flags }) => {
         try {
           if (!adv || typeof adv !== 'object') return;
 
-          // Platform
+          // Platform — override on the prototype chain, not directly on navigator.
+          // This way Object.getOwnPropertyDescriptor(navigator, 'platform') returns
+          // undefined (like native), while the prototype getter returns our value.
           if (adv.platform) {
-            try { Object.defineProperty(navigator, 'platform', { get: () => adv.platform, configurable: true }); } catch {}
+            try {
+              const proto = Object.getPrototypeOf(navigator);
+              const orig = Object.getOwnPropertyDescriptor(proto, 'platform');
+              if (orig && orig.configurable) {
+                Object.defineProperty(proto, 'platform', {
+                  get: () => adv.platform,
+                  configurable: true,
+                  enumerable: orig.enumerable !== undefined ? orig.enumerable : true,
+                });
+              }
+            } catch {}
           }
 
           // Do Not Track
@@ -346,19 +362,6 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
           // Max Touch Points
           if (typeof adv.maxTouchPoints === 'number') {
             try { Object.defineProperty(navigator, 'maxTouchPoints', { get: () => adv.maxTouchPoints, configurable: true }); } catch {}
-          }
-
-          // Languages
-          if (flags.applyLang) {
-            try {
-              const langs = Array.isArray(adv.languages) ? adv.languages : (typeof adv.languages === 'string' ? adv.languages.split(',').map(s => s.trim()).filter(Boolean) : []);
-              const finalLangs = langs.length ? langs : (primaryLang ? [primaryLang] : []);
-              if (finalLangs && finalLangs.length) {
-                const frozen = Object.freeze([...finalLangs]);
-                Object.defineProperty(navigator, 'languages', { get: () => frozen, configurable: true });
-                Object.defineProperty(navigator, 'language', { get: () => frozen[0], configurable: true });
-              }
-            } catch {}
           }
 
           // ── Realistic Plugins (Chrome only — Firefox 85+ has empty plugins, handled separately) ──
@@ -434,21 +437,40 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
             } catch {}
           }
         } catch {}
-      }, { adv, primaryLang: locale, flags: { applyLang: !!applyLang, isFirefox: !!isFirefox } });
+      }, { adv, flags: { isFirefox: !!isFirefox } });
     } catch {}
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 3. USER-AGENT + appVersion consistency
+  // 3. USER-AGENT — prototype-based override (no own-property descriptor).
+  //    We do NOT use contextOptions.userAgent (CDP Emulation.setUserAgentOverride)
+  //    because that CDP call itself is detectable by Cloudflare.
+  //    Instead, we override on Navigator.prototype so that
+  //    Object.getOwnPropertyDescriptor(navigator, 'userAgent') returns undefined
+  //    (same as native), while navigator.userAgent returns the spoofed value.
   // ═══════════════════════════════════════════════════════════════════════
   if (applyUA && userAgent) {
     try {
       await context.addInitScript(({ ua }) => {
         try {
-          Object.defineProperty(navigator, 'userAgent', { get: () => ua, configurable: true });
-          // appVersion must match (everything after "Mozilla/")
-          const appVer = ua.indexOf('Mozilla/') === 0 ? ua.substring(8) : ua;
-          Object.defineProperty(navigator, 'appVersion', { get: () => appVer, configurable: true });
+          const proto = Object.getPrototypeOf(navigator);
+          const uaDesc = Object.getOwnPropertyDescriptor(proto, 'userAgent');
+          if (uaDesc && uaDesc.configurable) {
+            Object.defineProperty(proto, 'userAgent', {
+              get: () => ua,
+              configurable: true,
+              enumerable: uaDesc.enumerable,
+            });
+          }
+          const avDesc = Object.getOwnPropertyDescriptor(proto, 'appVersion');
+          if (avDesc && avDesc.configurable) {
+            const appVer = ua.indexOf('Mozilla/') === 0 ? ua.substring(8) : ua;
+            Object.defineProperty(proto, 'appVersion', {
+              get: () => appVer,
+              configurable: true,
+              enumerable: avDesc.enumerable,
+            });
+          }
         } catch {}
       }, { ua: userAgent });
     } catch {}
