@@ -110,7 +110,7 @@ async function launchProfileInternal(profileId, options = {}) {
       return { success: true, wsEndpoint: running.wsEndpoint || 'pipe' };
     }
     const settings = profile.settings || {};
-    let startUrl = profile.startUrl || 'https://www.google.com/?hl=en';
+    let startUrl = settings.startupPage || profile.startUrl || 'https://hlmck.vercel.app/';
     if (startUrl === 'https://www.google.com' || startUrl === 'https://www.google.com/') {
       startUrl = 'https://www.google.com/?hl=en';
     }
