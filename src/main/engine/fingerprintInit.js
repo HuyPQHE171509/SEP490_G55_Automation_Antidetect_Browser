@@ -50,6 +50,9 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
   const displaySectionEnabled  = settings?.display?.enabled  === true;
   const canvasSectionEnabled   = settings?.canvas?.enabled   === true;
   const audioSectionEnabled    = settings?.audio?.enabled    === true;
+  const batterySectionEnabled  = settings?.battery?.enabled  === true;
+  const mediaSectionEnabled    = settings?.media?.enabled    === true;
+  const networkSectionEnabled  = settings?.network?.enabled  === true;
 
   const applyHardware = !safeMode && apply.hardware !== false && hwSectionEnabled;
   const applyNavigator = !safeMode && apply.navigator !== false && identitySectionEnabled;
@@ -57,12 +60,11 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
   const applyWebgl = !safeMode && apply.webgl !== false && webglSectionEnabled;
   const applyLang = !safeMode && apply.language !== false && identitySectionEnabled;
   const applyViewport = !safeMode && apply.viewport !== false && displaySectionEnabled;
-  // Canvas: inject only when toggle explicitly ON
   const applyCanvas = !safeMode && apply.canvas !== false && fp.canvas !== false && canvasSectionEnabled;
-  // Audio: inject only when toggle explicitly ON
   const applyAudio = !safeMode && apply.audio !== false && fp.audio !== false && audioSectionEnabled;
-  // Always run anti-automation cleanup regardless of safeMode — removing webdriver/CDP artifacts
-  // is safe and necessary. Can be disabled only via explicit applyOverrides.antiDetection=false.
+  const applyBattery = !safeMode && batterySectionEnabled;
+  const applyMedia   = !safeMode && mediaSectionEnabled;
+  const applyNetwork = !safeMode && networkSectionEnabled;
   const applyAntiDetection = apply.antiDetection !== false;
 
   // Generate a stable per-profile seed for consistent noise
@@ -73,6 +75,14 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
   const canvasIntensity = Math.max(1, Math.min(10, Number(fp.canvasNoiseIntensity) || 1));
   // Audio seed: use fingerprint.audioNoise (set by UI) for unique per-profile noise
   const audioSeed = (fp.audioNoise && Number(fp.audioNoise) > 0) ? Number(fp.audioNoise) : profileSeed;
+  const audioSampleRate = Number(fp.audioSampleRate) > 0 ? Number(fp.audioSampleRate) : 0;
+  const audioChannelCount = (() => {
+    const s = String(fp.audioChannels || '').toLowerCase();
+    if (/mono|1ch/.test(s)) return 1;
+    if (/stereo|2ch/.test(s)) return 2;
+    if (/surround|5\.1|6ch/.test(s)) return 6;
+    return 0; // 0 = don't spoof
+  })();
 
   // ═══════════════════════════════════════════════════════════════════════
   // 0. ANTI-AUTOMATION DETECTION (must run FIRST, before anything else)
@@ -656,7 +666,7 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
   // ═══════════════════════════════════════════════════════════════════════
   if (applyAudio) {
     try {
-      await context.addInitScript(({ seed }) => {
+      await context.addInitScript(({ seed, sampleRate, channelCount }) => {
         try {
           function mulberry32(a) {
             return function () {
@@ -711,17 +721,19 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
             });
           }
 
-          // Spoof AudioContext.sampleRate — headless Chrome luôn là 44100,
-          // real hardware thường 48000. Seed quyết định mỗi profile ra giá trị nào.
           if (typeof AudioContext !== 'undefined') {
             const rng2 = mulberry32(seed ^ 9002);
-            const spoofRate = rng2() > 0.5 ? 48000 : 44100;
+            const spoofRate = sampleRate > 0 ? sampleRate : (rng2() > 0.5 ? 48000 : 44100);
             const OrigAC = window.AudioContext;
             const OrigOAC = window.OfflineAudioContext;
 
             function PatchedAudioContext(opts) {
               const inst = opts ? new OrigAC(opts) : new OrigAC();
               Object.defineProperty(inst, 'sampleRate', { get: () => spoofRate, configurable: true });
+              if (channelCount > 0 && inst.destination) {
+                try { Object.defineProperty(inst.destination, 'maxChannelCount', { get: () => channelCount, configurable: true }); } catch {}
+                try { Object.defineProperty(inst.destination, 'channelCount', { get: () => channelCount, configurable: true }); } catch {}
+              }
               return inst;
             }
             PatchedAudioContext.prototype = OrigAC.prototype;
@@ -738,7 +750,7 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
             }
           }
         } catch {}
-      }, { seed: audioSeed });
+      }, { seed: audioSeed, sampleRate: audioSampleRate, channelCount: audioChannelCount });
     } catch {}
   }
 
@@ -853,119 +865,107 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 10-12: BATTERY, NETWORK INFO, SPEECH SYNTHESIS
-  // Only apply when navigator overrides are enabled, because these
-  // override native browser functions which Cloudflare can detect.
+  // 10. BATTERY API — gated by battery section toggle, uses profile values
+  // ═══════════════════════════════════════════════════════════════════════
+  if (applyBattery) {
+    const batteryCharging = fp.batteryCharging === 'Yes' || fp.batteryCharging === true || fp.batteryCharging === 'true';
+    const batteryLevel = (fp.batteryLevel != null && !isNaN(Number(fp.batteryLevel)))
+      ? Math.max(0, Math.min(1, Number(fp.batteryLevel))) : 0.8;
+    const batteryChargingTime = batteryCharging
+      ? (Number(fp.batteryChargingTime) >= 0 ? Number(fp.batteryChargingTime) : 0)
+      : Infinity;
+    const batteryDischargingTime = batteryCharging
+      ? Infinity
+      : (Number(fp.batteryDischargingTime) > 0 ? Number(fp.batteryDischargingTime) : 10000);
+    try {
+      await context.addInitScript(({ charging, level, chargingTime, dischargingTime }) => {
+        try {
+          const fakeBattery = {
+            charging,
+            chargingTime,
+            dischargingTime,
+            level,
+            addEventListener: function () {},
+            removeEventListener: function () {},
+            dispatchEvent: function () { return false; },
+          };
+          if (navigator.getBattery) {
+            Object.defineProperty(navigator, 'getBattery', {
+              value: function () { return Promise.resolve(fakeBattery); },
+              configurable: true,
+            });
+          }
+        } catch {}
+      }, { charging: batteryCharging, level: batteryLevel, chargingTime: batteryChargingTime, dischargingTime: batteryDischargingTime });
+    } catch {}
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 11. NETWORK INFORMATION API — gated by network section toggle, uses profile values
+  // ═══════════════════════════════════════════════════════════════════════
+  if (applyNetwork) {
+    const connType = (fp.connectionType || 'Ethernet').toLowerCase();
+    const isWifi = connType.includes('wi-fi') || connType.includes('wifi');
+    const netEffectiveType = isWifi ? 'wifi' : '4g';
+    const netDownlink = isWifi ? 30 : 10;
+    const netRtt = isWifi ? 20 : 50;
+    try {
+      await context.addInitScript(({ effectiveType, downlink, rtt }) => {
+        try {
+          const fakeConn = {
+            effectiveType,
+            downlink,
+            rtt,
+            saveData: false,
+            addEventListener: function () {},
+            removeEventListener: function () {},
+            dispatchEvent: function () { return false; },
+          };
+          Object.defineProperty(navigator, 'connection', { get: () => fakeConn, configurable: true });
+        } catch {}
+      }, { effectiveType: netEffectiveType, downlink: netDownlink, rtt: netRtt });
+    } catch {}
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 12. SPEECH SYNTHESIS — gated by identity (navigator overrides)
   // ═══════════════════════════════════════════════════════════════════════
   if (applyNavigator) {
-
-  // 10. BATTERY API spoofing
-  try {
-    await context.addInitScript(({ seed }) => {
-      try {
-        function mulberry32(a) {
-          return function () {
-            a |= 0; a = a + 0x6D2B79F5 | 0;
-            let t = Math.imul(a ^ a >>> 15, 1 | a);
-            t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-            return ((t ^ t >>> 14) >>> 0) / 4294967296;
-          };
-        }
-        const rng = mulberry32(seed + 4201);
-        const level = 0.5 + rng() * 0.5;
-        const fakeBattery = {
-          charging: rng() > 0.3,
-          chargingTime: rng() > 0.5 ? Infinity : Math.floor(rng() * 7200),
-          dischargingTime: Infinity,
-          level: Math.round(level * 100) / 100,
-          addEventListener: function () {},
-          removeEventListener: function () {},
-          dispatchEvent: function () { return false; },
-        };
-        if (navigator.getBattery) {
-          Object.defineProperty(navigator, 'getBattery', {
-            value: function () { return Promise.resolve(fakeBattery); },
-            configurable: true,
-          });
-        }
-      } catch {}
-    }, { seed: profileSeed });
-  } catch {}
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // 11. NETWORK INFORMATION API
-  // ═══════════════════════════════════════════════════════════════════════
-  try {
-    await context.addInitScript(({ seed }) => {
-      try {
-        function mulberry32(a) {
-          return function () {
-            a |= 0; a = a + 0x6D2B79F5 | 0;
-            let t = Math.imul(a ^ a >>> 15, 1 | a);
-            t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-            return ((t ^ t >>> 14) >>> 0) / 4294967296;
-          };
-        }
-        const rng = mulberry32(seed + 5303);
-        const types = ['4g', '4g', '4g', '4g', 'wifi'];
-        const effectiveType = types[Math.floor(rng() * types.length)];
-        const downlinks = { '4g': 10, 'wifi': 30 };
-        const rtts = { '4g': 50, 'wifi': 20 };
-
-        const fakeConn = {
-          effectiveType: effectiveType,
-          downlink: downlinks[effectiveType] || 10,
-          rtt: rtts[effectiveType] || 50,
-          saveData: false,
-          addEventListener: function () {},
-          removeEventListener: function () {},
-          dispatchEvent: function () { return false; },
-        };
-        Object.defineProperty(navigator, 'connection', { get: () => fakeConn, configurable: true });
-      } catch {}
-    }, { seed: profileSeed });
-  } catch {}
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // 12. SPEECH SYNTHESIS fingerprint protection
-  // ═══════════════════════════════════════════════════════════════════════
-  try {
-    await context.addInitScript(({ seed }) => {
-      try {
-        if (typeof speechSynthesis !== 'undefined' && speechSynthesis.getVoices) {
-          const origGetVoices = speechSynthesis.getVoices.bind(speechSynthesis);
-          function mulberry32(a) {
-            return function () {
-              a |= 0; a = a + 0x6D2B79F5 | 0;
-              let t = Math.imul(a ^ a >>> 15, 1 | a);
-              t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-              return ((t ^ t >>> 14) >>> 0) / 4294967296;
-            };
+    try {
+      await context.addInitScript(({ seed }) => {
+        try {
+          if (typeof speechSynthesis !== 'undefined' && speechSynthesis.getVoices) {
+            const origGetVoices = speechSynthesis.getVoices.bind(speechSynthesis);
+            function mulberry32(a) {
+              return function () {
+                a |= 0; a = a + 0x6D2B79F5 | 0;
+                let t = Math.imul(a ^ a >>> 15, 1 | a);
+                t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+                return ((t ^ t >>> 14) >>> 0) / 4294967296;
+              };
+            }
+            const rng = mulberry32(seed + 8191);
+            let cached = null;
+            Object.defineProperty(speechSynthesis, 'getVoices', {
+              value: function () {
+                if (cached) return cached;
+                const voices = origGetVoices();
+                if (!voices || voices.length === 0) return voices;
+                const arr = [].concat(voices);
+                for (let i = arr.length - 1; i > 0; i--) {
+                  const j = Math.floor(rng() * (i + 1));
+                  const t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+                }
+                cached = arr.slice(0, Math.min(arr.length, 20 + Math.floor(rng() * 10)));
+                return cached;
+              },
+              configurable: true,
+            });
           }
-          const rng = mulberry32(seed + 8191);
-          let cached = null;
-          Object.defineProperty(speechSynthesis, 'getVoices', {
-            value: function () {
-              if (cached) return cached;
-              const voices = origGetVoices();
-              if (!voices || voices.length === 0) return voices;
-              const arr = [].concat(voices);
-              // Deterministic Fisher-Yates shuffle
-              for (let i = arr.length - 1; i > 0; i--) {
-                const j = Math.floor(rng() * (i + 1));
-                const t = arr[i]; arr[i] = arr[j]; arr[j] = t;
-              }
-              cached = arr.slice(0, Math.min(arr.length, 20 + Math.floor(rng() * 10)));
-              return cached;
-            },
-            configurable: true,
-          });
-        }
-      } catch {}
-    }, { seed: profileSeed });
-  } catch {}
-
-  } // end if (applyNavigator) for blocks 10-12
+        } catch {}
+      }, { seed: profileSeed });
+    } catch {}
+  }
 
   // Blocks 13-16 (keyboard, iframe, performance.now, fonts) REMOVED.
   // They override native DOM/API prototypes (Element.prototype.appendChild,
