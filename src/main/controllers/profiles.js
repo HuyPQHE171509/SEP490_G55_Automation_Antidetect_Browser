@@ -454,8 +454,9 @@ async function launchProfileInternal(profileId, options = {}) {
     }
     // Thiết lập múi giờ giả — JavaScript Date và Intl API sẽ dùng timezone này.
     if (applyTz) contextOptions.timezoneId = fp.timezone || settings.timezone || 'UTC';
-    // Thiết lập User-Agent giả — cả HTTP header lẫn navigator.userAgent sẽ trả về giá trị này.
-    if (applyUA && fp.userAgent) contextOptions.userAgent = fp.userAgent;
+    // Do NOT set contextOptions.userAgent — Playwright calls Emulation.setUserAgentOverride
+    // via CDP which is detectable by Cloudflare even when the UA value matches native.
+    // UA spoofing is handled via JS prototype override in fingerprintInit.js instead.
     // Apply viewport and device scale like CDP DeviceMetricsOverride
     // Thiết lập độ phân giải màn hình giả (viewport) và tỷ lệ pixel (devicePixelRatio).
     // screenResolution dạng "1920x1080" sẽ được parse thành width=1920, height=1080.

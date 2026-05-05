@@ -47,7 +47,6 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
   // Dùng || {} để tránh lỗi nếu profile hoặc settings là null/undefined
   const fp = (profile && profile.fingerprint) || {};
   const adv = (settings && settings.advanced) || {};
-  const locale = fp.language || settings?.language || 'en-US';
   const userAgent = overrideUserAgent || fp.userAgent || undefined;
   // Use 0 as sentinel = "use real hardware value, don't spoof"
   // 0 = giá trị sentinel: không giả mạo, dùng giá trị thật của máy
@@ -85,7 +84,6 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
   const applyNavigator = !safeMode && apply.navigator !== false && identitySectionEnabled;
   const applyUA = !safeMode && apply.userAgent !== false && identitySectionEnabled;
   const applyWebgl = !safeMode && apply.webgl !== false && webglSectionEnabled;
-  const applyLang = !safeMode && apply.language !== false && identitySectionEnabled;
   const applyViewport = !safeMode && apply.viewport !== false && displaySectionEnabled;
   // Canvas và Audio còn kiểm tra thêm fp.canvas / fp.audio !== false (cờ từ dữ liệu fingerprint)
   const applyCanvas = !safeMode && apply.canvas !== false && fp.canvas !== false && canvasSectionEnabled;
@@ -422,21 +420,25 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 2. NAVIGATOR: platform, DNT, touchPoints, languages, plugins
+  // 2. NAVIGATOR: platform, DNT, touchPoints, plugins
+  //    NOTE: userAgent, language, languages are set via Playwright CDP context
+  //    options (contextOptions.userAgent / contextOptions.locale) — those use
+  //    Emulation.setUserAgentOverride / setLocaleOverride at the browser level,
+  //    producing native descriptors. Overriding them again here with
+  //    Object.defineProperty creates a detectable tampered descriptor that
+  //    Cloudflare checks via Object.getOwnPropertyDescriptor(navigator, 'userAgent').
   // ═══════════════════════════════════════════════════════════════════════
   // Section 2: giả mạo các thuộc tính nhận dạng trong đối tượng navigator.
   // navigator là đối tượng JavaScript chứa thông tin về trình duyệt và hệ điều hành.
   // applyNavigator (biến từ trên) = true khi section identity được bật và không ở safeMode.
   if (applyNavigator) {
     try {
-      await context.addInitScript(({ adv, primaryLang, flags }) => {
+      await context.addInitScript(({ adv, flags }) => {
         try {
           if (!adv || typeof adv !== 'object') return;
 
           // Platform: hệ điều hành/kiến trúc máy (ví dụ: "Win32", "MacIntel", "Linux x86_64")
-          // Phải khớp với User-Agent và các thuộc tính navigator khác để không bị phát hiện mâu thuẫn.
           // Ghi đè qua prototype để Object.getOwnPropertyDescriptor(navigator,'platform') = undefined
-          // (trông giống trình duyệt thật hơn là ghi đè trực tiếp vào navigator)
           if (adv.platform) {
             try {
               const navProto = Object.getPrototypeOf(navigator);
@@ -462,12 +464,9 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
             try { Object.defineProperty(navigator, 'maxTouchPoints', { get: () => adv.maxTouchPoints, configurable: true }); } catch {}
           }
 
-          // Languages: danh sách ngôn ngữ ưa thích của trình duyệt (ví dụ: ['en-US', 'en', 'vi'])
-          // navigator.languages = mảng đầy đủ, navigator.language = phần tử đầu tiên
-          // Object.freeze() để mảng không bị sửa đổi từ bên ngoài
+          // Languages
           if (flags.applyLang) {
             try {
-              // Phân tích languages từ adv: có thể là mảng hoặc chuỗi "en-US,en,vi"
               const langs = Array.isArray(adv.languages) ? adv.languages : (typeof adv.languages === 'string' ? adv.languages.split(',').map(s => s.trim()).filter(Boolean) : []);
               const finalLangs = langs.length ? langs : (primaryLang ? [primaryLang] : []);
               if (finalLangs && finalLangs.length) {
@@ -562,12 +561,17 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
             } catch {}
           }
         } catch {}
-      }, { adv, primaryLang: locale, flags: { applyLang: !!applyLang, isFirefox: !!isFirefox } });
+      }, { adv, flags: { isFirefox: !!isFirefox } });
     } catch {}
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 3. USER-AGENT + appVersion consistency
+  // 3. USER-AGENT — prototype-based override (no own-property descriptor).
+  //    We do NOT use contextOptions.userAgent (CDP Emulation.setUserAgentOverride)
+  //    because that CDP call itself is detectable by Cloudflare.
+  //    Instead, we override on Navigator.prototype so that
+  //    Object.getOwnPropertyDescriptor(navigator, 'userAgent') returns undefined
+  //    (same as native), while navigator.userAgent returns the spoofed value.
   // ═══════════════════════════════════════════════════════════════════════
   // Section 3: ghi đè User-Agent trong JavaScript.
   // User-Agent (UA) là chuỗi định danh trình duyệt gửi lên server (ví dụ:
@@ -579,12 +583,6 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
     try {
       await context.addInitScript(({ ua }) => {
         try {
-          // Ghi đè navigator.userAgent qua PROTOTYPE thay vì trực tiếp trên navigator.
-          // Lý do: nếu dùng Object.defineProperty(navigator, 'userAgent', ...) trực tiếp,
-          // Cloudflare phát hiện bằng Object.getOwnPropertyDescriptor(navigator, 'userAgent')
-          // — giá trị trả về sẽ là custom descriptor thay vì undefined (trình duyệt thật).
-          // Ghi đè trên prototype: Object.getOwnPropertyDescriptor(navigator, 'userAgent')
-          // trả về undefined (không có own-property) → trông giống trình duyệt thật hơn.
           const proto = Object.getPrototypeOf(navigator);
           const uaDesc = proto && Object.getOwnPropertyDescriptor(proto, 'userAgent');
           if (uaDesc && uaDesc.configurable) {
@@ -594,10 +592,8 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
               enumerable: uaDesc.enumerable,
             });
           } else {
-            // Fallback: ghi đè trực tiếp nếu prototype không configurable
             Object.defineProperty(navigator, 'userAgent', { get: () => ua, configurable: true });
           }
-          // navigator.appVersion = phần sau "Mozilla/" trong UA (đặc tả cũ nhưng vẫn được kiểm tra)
           const appVer = ua.indexOf('Mozilla/') === 0 ? ua.substring(8) : ua;
           Object.defineProperty(navigator, 'appVersion', { get: () => appVer, configurable: true });
         } catch {}
