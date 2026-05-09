@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Play, Plus, Trash2, Search, FileCode, RefreshCw, ChevronRight, X, Download, Upload, Edit2, Pause, Square } from 'lucide-react';
+import { Play, Plus, Trash2, Search, FileCode, RefreshCw, ChevronRight, X, Download, Upload, Edit2, Pause, Square, Clock } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 
 /* ═══════════════ API Reference Data ═══════════════ */
@@ -128,6 +128,10 @@ function ScriptsTab({ profiles }) {
 
     // Browser mode
     const [browserMode, setBrowserMode] = useState('visible');
+    // Auto-schedule (cron) state — tách riêng để dễ quản lý UI
+    const [cronEnabled, setCronEnabled] = useState(false);
+    const [cronSchedule, setCronSchedule] = useState('');       // cron expression: "0 9 * * 1-5"
+    const [cronProfileId, setCronProfileId] = useState('');     // profile được chỉ định chạy script tự động
     // Center panel tab: 'settings' | 'apiref'
     const [settingsTab, setSettingsTab] = useState('settings');
 
@@ -145,6 +149,10 @@ function ScriptsTab({ profiles }) {
         setSelectedId(null);
         setRunResult(null);
         setBrowserMode('visible');
+        // Reset schedule về mặc định: tắt, không có cron, không có profile
+        setCronEnabled(false);
+        setCronSchedule('');
+        setCronProfileId('');
         setSettingsTab('settings');
     };
 
@@ -153,11 +161,26 @@ function ScriptsTab({ profiles }) {
         setSelectedId(s.id);
         setRunResult(null);
         setBrowserMode(s.browserMode || 'visible');
+        // Nạp lại schedule từ script đã lưu (fallback an toàn nếu field thiếu)
+        setCronEnabled(!!s.schedule?.enabled);
+        setCronSchedule(s.schedule?.cron || '');
+        setCronProfileId(s.schedule?.profileId || '');
         setSettingsTab('settings');
     };
 
     const handleSave = async () => {
         if (!editing) return;
+        // Validate schedule trước khi gửi xuống main process — tránh lưu state không hợp lệ
+        if (cronEnabled) {
+            if (!cronSchedule.trim()) {
+                alert('Vui lòng nhập cron expression (ví dụ: "0 9 * * 1-5") khi bật Auto-schedule.');
+                return;
+            }
+            if (!cronProfileId) {
+                alert('Vui lòng chọn profile để chạy script tự động.');
+                return;
+            }
+        }
         try {
             const res = await window.electronAPI.saveScript({
                 id: editing.id,
@@ -165,6 +188,12 @@ function ScriptsTab({ profiles }) {
                 description: editing.description,
                 code: editing.code,
                 browserMode,
+                // Gửi schedule dưới dạng nested object — khớp shape mà saveScriptInternal mong đợi
+                schedule: {
+                    enabled: cronEnabled,
+                    cron: cronSchedule.trim(),
+                    profileId: cronProfileId,
+                },
             });
             if (!res?.success) { alert(res?.error || 'Save failed'); return; }
             await load();
@@ -453,6 +482,117 @@ function ScriptsTab({ profiles }) {
                                             style={{ background: browserMode === 'visible' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'visible' ? '#fff' : 'var(--fg)' }}
                                             onClick={() => setBrowserMode('visible')}>Visible</button>
                                     </div>
+                                </div>
+
+                                {/* ═══ Auto-Schedule (Cron) ═══ */}
+                                <div className="p-3 space-y-3" style={{ borderBottom: '1px solid var(--border)' }}>
+                                    {/* Header + toggle */}
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <Clock size={14} style={{ color: 'var(--primary)' }} />
+                                            <span className="text-[0.78rem] font-semibold" style={{ color: 'var(--fg)' }}>Auto-Schedule</span>
+                                        </div>
+                                        {/* Toggle switch */}
+                                        <label className="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" className="sr-only peer"
+                                                checked={cronEnabled}
+                                                onChange={e => setCronEnabled(e.target.checked)} />
+                                            <div className="w-9 h-5 rounded-full transition"
+                                                style={{
+                                                    background: cronEnabled ? 'var(--primary)' : 'var(--glass)',
+                                                    border: '1px solid var(--border2)',
+                                                }}>
+                                                <div className="w-4 h-4 bg-white rounded-full transition-transform"
+                                                    style={{
+                                                        transform: cronEnabled ? 'translateX(16px)' : 'translateX(2px)',
+                                                        marginTop: '1px',
+                                                    }} />
+                                            </div>
+                                        </label>
+                                    </div>
+
+                                    <p className="text-[0.66rem]" style={{ color: 'var(--muted)' }}>
+                                        Khi bật, script sẽ tự động chạy theo lịch cron trên profile được chỉ định.
+                                    </p>
+
+                                    {/* Khi bật → hiển thị các field bên dưới */}
+                                    {cronEnabled && (
+                                        <>
+                                            {/* Cron expression input */}
+                                            <div>
+                                                <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>
+                                                    Cron expression
+                                                </label>
+                                                <input type="text"
+                                                    className="w-full rounded px-2 py-1.5 text-[0.75rem] font-mono"
+                                                    style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
+                                                    value={cronSchedule}
+                                                    onChange={e => setCronSchedule(e.target.value)}
+                                                    placeholder="e.g. 0 9 * * 1-5" />
+                                                <p className="text-[0.62rem] mt-1" style={{ color: 'var(--muted)' }}>
+                                                    Định dạng: <code>phút giờ ngày tháng thứ</code>
+                                                </p>
+                                            </div>
+
+                                            {/* Preset buttons — nhấn để điền nhanh */}
+                                            <div>
+                                                <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>
+                                                    Preset nhanh
+                                                </label>
+                                                <div className="flex flex-wrap gap-1">
+                                                    {[
+                                                        { label: 'Mỗi phút', expr: '* * * * *' },
+                                                        { label: 'Mỗi 5 phút', expr: '*/5 * * * *' },
+                                                        { label: 'Mỗi giờ', expr: '0 * * * *' },
+                                                        { label: 'Mỗi ngày 9h', expr: '0 9 * * *' },
+                                                        { label: 'T2-T6 9h', expr: '0 9 * * 1-5' },
+                                                        { label: 'Mỗi tuần (CN)', expr: '0 0 * * 0' },
+                                                    ].map(p => (
+                                                        <button key={p.expr}
+                                                            type="button"
+                                                            className="px-2 py-0.5 text-[0.65rem] rounded transition"
+                                                            style={{
+                                                                background: cronSchedule === p.expr ? 'var(--primary)' : 'var(--glass)',
+                                                                color: cronSchedule === p.expr ? '#fff' : 'var(--fg)',
+                                                                border: '1px solid var(--border2)',
+                                                            }}
+                                                            onClick={() => setCronSchedule(p.expr)}>
+                                                            {p.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Profile dropdown — script sẽ chạy trên profile này */}
+                                            <div>
+                                                <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>
+                                                    Profile chạy
+                                                </label>
+                                                <select className="w-full rounded px-2 py-1.5 text-[0.75rem]"
+                                                    style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
+                                                    value={cronProfileId}
+                                                    onChange={e => setCronProfileId(e.target.value)}>
+                                                    <option value="">-- Chọn profile --</option>
+                                                    {profiles.map(p => (
+                                                        <option key={p.id} value={p.id}>{p.name || p.id}</option>
+                                                    ))}
+                                                </select>
+                                                {!profiles.length && (
+                                                    <p className="text-[0.62rem] mt-1" style={{ color: '#ef4444' }}>
+                                                        Chưa có profile nào. Hãy tạo profile trước.
+                                                    </p>
+                                                )}
+                                            </div>
+
+                                            {/* Hiển thị trạng thái */}
+                                            {cronSchedule && cronProfileId && (
+                                                <div className="rounded px-2 py-1.5 text-[0.66rem]"
+                                                    style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', color: 'var(--fg)' }}>
+                                                    Script sẽ tự chạy theo lịch <code className="font-mono">{cronSchedule}</code>
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         ) : (

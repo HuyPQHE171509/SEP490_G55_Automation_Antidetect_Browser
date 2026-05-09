@@ -85,6 +85,17 @@ app.whenReady().then(async () => {
   startBackgroundHeartbeat();
   try { startAutomationScheduler(); } catch (e) { appendLog('system', `Automation scheduler failed to start: ${e?.message || e}`); }
 
+  // 6b. Restore all saved cron jobs from scripts.json
+  // Khi app khởi động lại, các script đã đặt schedule trước đó cần được tái kích hoạt cron job
+  // Nếu không gọi refreshAllScripts() ở đây thì user phải edit lại từng script để job chạy lại
+  try {
+    const { refreshAllScripts } = require('./engine/scriptScheduler');
+    refreshAllScripts();
+    appendLog('system', 'Script scheduler: restored cron jobs from scripts.json');
+  } catch (e) {
+    appendLog('system', `Script scheduler restore failed: ${e?.message || e}`);
+  }
+
   // Sync license revocation/expiry with web server (non-blocking, graceful if offline)
   const { syncLicenseStatus } = require('./services/machineId');
   syncLicenseStatus().catch(() => {});

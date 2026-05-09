@@ -220,12 +220,27 @@ function registerIpcHandlers(extra = {}) {
   // [UC_19.02 / UC_19.03] Tạo mới hoặc cập nhật script
   handle('scripts-save', async (_e, script) => {
     const r = await saveScriptInternal(script);
-    if (r?.success) appendLog('system', `Script saved: "${script?.name || script?.id || 'unnamed'}"`);
-    else appendLog('system', `Script save failed: ${r?.error || 'unknown'}`);
+    if (r?.success) {
+      appendLog('system', `Script saved: "${script?.name || script?.id || 'unnamed'}"`);
+      // Đồng bộ cron job với schedule mới (scheduleScript tự cancel job cũ nếu có)
+      try {
+        const { scheduleScript } = require('../engine/scriptScheduler');
+        scheduleScript(r.script);
+      } catch (e) {
+        appendLog('system', `scheduleScript error after save: ${e?.message || e}`);
+      }
+    } else {
+      appendLog('system', `Script save failed: ${r?.error || 'unknown'}`);
+    }
     return r;
   });
-  // [UC_19.04] Xóa script
+  // [UC_19.04] Xóa script — hủy cron job trước rồi mới xóa file
   handle('scripts-delete', async (_e, id) => {
+    // Cancel cron job BEFORE deleting so scheduler doesn't fire after deletion
+    try {
+      const { cancelScript } = require('../engine/scriptScheduler');
+      cancelScript(String(id));
+    } catch {}
     const r = await deleteScriptInternal(id);
     if (r?.success) appendLog('system', `Script deleted: ${id}`);
     return r;
