@@ -88,6 +88,7 @@ function scheduleScript(script) {
         // Lazy require để tránh circular dependency khi module load lần đầu
         const { executeScript } = require('./scriptRuntime');
         const { readScripts } = require('../storage/scripts');
+        const { runningProfiles } = require('../state/runtime');
 
         // ── Quan trọng: Đọc lại code mới nhất từ file thay vì dùng biến `script` trong closure ──
         // Lý do: Nếu người dùng chỉnh sửa script sau khi job được tạo, closure sẽ giữ code cũ.
@@ -105,15 +106,38 @@ function scheduleScript(script) {
         const profileId = fresh.schedule?.profileId;
         if (!profileId) return;
 
+        // ── Auto-launch profile nếu chưa chạy ─────────────────────────
+        // executeScript() yêu cầu profile đã được launch sẵn — nếu chưa thì script
+        // chỉ log "profile not running" rồi thoát. Vì cron tick có thể xảy ra khi
+        // user chưa mở profile, ta phải tự launch trước khi chạy script.
+        if (!runningProfiles.has(profileId)) {
+          appendLog(profileId, `scriptScheduler: profile not running — auto-launching for scheduled script "${fresh.name}"`);
+          try {
+            const { launchProfileInternal } = require('../controllers/profiles');
+            const { readProfiles } = require('../storage/profiles');
+            const profileForEngine = readProfiles().find(p => p.id === profileId);
+            const profileEngine = profileForEngine?.settings?.engine || 'playwright';
+            const headless = fresh.browserMode === 'headless';
+            const launchResult = await launchProfileInternal(profileId, { headless, engine: profileEngine });
+            if (!launchResult?.success) {
+              appendLog(profileId, `scriptScheduler: failed to launch profile — ${launchResult?.error || 'unknown'}`);
+              return;
+            }
+            // Đợi 1.5 giây cho browser khởi động xong (giống logic trong IPC handler scripts-execute)
+            await new Promise(r => setTimeout(r, 1500));
+          } catch (e) {
+            appendLog(profileId, `scriptScheduler: launch profile exception — ${e?.message || e}`);
+            return;
+          }
+        }
+
         // Ghi log trước khi chạy — giúp debug biết script chạy vào lúc nào và với cron nào
         appendLog(profileId, `scriptScheduler: auto-run script "${fresh.name}" (cron: ${expr})`);
 
         // Thực thi script với profile được chỉ định
         // timeoutMs: giới hạn 2 phút để tránh script bị treo vô thời hạn
-        // headless: chạy ngầm nếu browserMode là 'headless' (không hiện cửa sổ browser)
         await executeScript(profileId, fresh.code, {
           timeoutMs: 120000,
-          headless: fresh.browserMode === 'headless',
         });
       } catch (e) {
         // Bắt lỗi riêng bên trong callback để tránh crash toàn bộ cron system
