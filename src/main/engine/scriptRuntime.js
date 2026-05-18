@@ -285,8 +285,21 @@ async function executeScript(profileId, code, { timeoutMs = 120000 } = {}) {
   // ── Khởi tạo Control State ────────────────────────────────────
   // ctrl là "remote control" của script này — các hàm stop/pause/resume
   // giao tiếp với script đang chạy thông qua object này.
-  const ctrl = { aborted: false, paused: false, rejectAbort: null, pageHandle: null };
+  // _sandboxTimers: Set tracking all timer IDs created inside sandbox (for zombie timer fix)
+  const ctrl = { aborted: false, paused: false, rejectAbort: null, pageHandle: null, _sandboxTimers: new Set() };
   _runningScripts.set(profileId, ctrl);
+
+  // Force-clear tất cả timer còn tồn tại trong sandbox sau khi script kết thúc.
+  // Gọi sau cả success lẫn error — đảm bảo không có zombie timer nào sót lại.
+  function _clearAllSandboxTimers() {
+    for (const t of ctrl._sandboxTimers) {
+      try {
+        if (t.type === 'interval') clearInterval(t.id);
+        else clearTimeout(t.id);
+      } catch {}
+    }
+    ctrl._sandboxTimers.clear();
+  }
 
   appendLog(profileId, `Script: starting execution (timeout=${timeoutMs}ms)`);
 
@@ -550,11 +563,52 @@ async function executeScript(profileId, code, { timeoutMs = 120000 } = {}) {
     // Giả lập console để tránh ReferenceError khi script dùng console.log().
     // Tất cả đều trỏ về log() để output được thu thập vào mảng logs.
     console: { log, warn: log, error: log, info: log },
-    // Timer APIs — cần thiết cho async script, nhưng không cấp thêm quyền hạn.
-    setTimeout,
-    clearTimeout,
-    setInterval,
-    clearInterval,
+
+    // ── Timer APIs — wrapped để fix Zombie Timer Bug ─────────────────────────
+    // Vấn đề (Bug #2): setTimeout/setInterval native không biết ctrl.aborted.
+    // Khi stopScript() được gọi, các callback trong setInterval vẫn chạy mãi
+    // vì không ai clear chúng — gọi là "zombie timer".
+    //
+    // Giải pháp:
+    //   1. Track tất cả timer IDs vào Set _sandboxTimers để force-clear khi abort.
+    //   2. Trước khi chạy callback, kiểm tra ctrl.aborted — nếu đã abort thì bỏ qua.
+    //   3. _sandboxTimers được clear bởi _clearAllSandboxTimers() sau khi script kết thúc.
+    // ─────────────────────────────────────────────────────────────────────────────
+    setTimeout: (fn, delay, ...args) => {
+      const id = setTimeout(() => {
+        if (ctrl.aborted) return; // zombie prevention: skip callback if script stopped
+        try { fn(...args); } catch {}
+      }, delay);
+      ctrl._sandboxTimers.add({ type: 'timeout', id });
+      return id;
+    },
+    clearTimeout: (id) => {
+      clearTimeout(id);
+      // Remove from tracking set
+      for (const t of ctrl._sandboxTimers) {
+        if (t.id === id) { ctrl._sandboxTimers.delete(t); break; }
+      }
+    },
+    setInterval: (fn, delay, ...args) => {
+      const id = setInterval(() => {
+        if (ctrl.aborted) {
+          // Auto-clear zombie interval khi phát hiện script đã bị abort
+          clearInterval(id);
+          ctrl._sandboxTimers.forEach(t => { if (t.id === id) ctrl._sandboxTimers.delete(t); });
+          return;
+        }
+        try { fn(...args); } catch {}
+      }, delay);
+      ctrl._sandboxTimers.add({ type: 'interval', id });
+      return id;
+    },
+    clearInterval: (id) => {
+      clearInterval(id);
+      for (const t of ctrl._sandboxTimers) {
+        if (t.id === id) { ctrl._sandboxTimers.delete(t); break; }
+      }
+    },
+
     // Built-in JavaScript globals vô hại — script cần chúng để hoạt động bình thường.
     JSON,
     Date,
@@ -629,6 +683,7 @@ async function executeScript(profileId, code, { timeoutMs = 120000 } = {}) {
     // ── Thành công ────────────────────────────────────────────────
     // Xóa script khỏi Map để đánh dấu đã kết thúc (cho phép profile chạy script mới).
     _runningScripts.delete(profileId);
+    _clearAllSandboxTimers(); // Bug #2 fix: force-clear mọi zombie timer còn sót
     if (pageHandle?.cleanup) await pageHandle.cleanup();
     appendLog(profileId, `Script: completed successfully (${logs.length} log entries)`);
 
@@ -639,6 +694,7 @@ async function executeScript(profileId, code, { timeoutMs = 120000 } = {}) {
     // ── Xử lý Lỗi ─────────────────────────────────────────────────
     // Dù lỗi là gì (throw, timeout, abort, assert...), đều phải dọn dẹp trước.
     _runningScripts.delete(profileId);
+    _clearAllSandboxTimers(); // Bug #2 fix: force-clear mọi zombie timer còn sót
     const errMsg = e?.message || String(e);
 
     // Phân loại lỗi để ghi log có ngữ nghĩa hơn — giúp debug dễ hơn.

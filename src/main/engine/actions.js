@@ -483,6 +483,15 @@ async function keyboardInsertTextProxy(profileId, { text } = {}) { const { succe
 // Delegate sang scriptRuntime.executeScript() — không chạy trực tiếp trong browser page
 // mà chạy trong Node.js với quyền truy cập vào page, context, playwright API.
 async function runInlineScriptProxy(profileId, { code, timeoutMs = 60000 } = {}) {
+  // Bug #1 fix: Ethical linter check — endpoint này expose qua REST /actions/run-script
+  // trước đây bỏ qua linter hoàn toàn
+  const { checkEthical } = require('./scriptRunner');
+  const lint = checkEthical(code || '');
+  if (!lint.ok) {
+    const { appendAuditLog } = require('../logging/auditLogger');
+    appendAuditLog('VIOLATION_BLOCKED', `[rest/actions/run-script] ${lint.reason}`, profileId);
+    return err(`EthicalViolationError: ${lint.reason}`);
+  }
   // Require động để tránh circular dependency (scriptRuntime cũng import từ actions.js)
   const { executeScript } = require('./scriptRuntime');
   try {

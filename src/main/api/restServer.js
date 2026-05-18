@@ -1118,6 +1118,15 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
       if (!scriptContent)
         return reply.code(400).send({ success: false, error: "Task has no scriptContent to execute" });
 
+      // Bug #1 fix: Ethical linter check — trước đây endpoint này bỏ qua hoàn toàn
+      const { checkEthical } = require("../engine/scriptRunner");
+      const lint = checkEthical(scriptContent);
+      if (!lint.ok) {
+        const { appendAuditLog } = require("../logging/auditLogger");
+        appendAuditLog('VIOLATION_BLOCKED', `[rest/tasks/run] ${lint.reason}`, task.profileId);
+        return reply.code(403).send({ success: false, error: `EthicalViolationError: ${lint.reason}` });
+      }
+
       const taskId = req.params.id;
       const startedAt = new Date().toISOString();
       const prevLogs = task.logs || [];
@@ -1768,7 +1777,18 @@ async function buildFastifyApp(rest, openapiPath, handlers) {
       const { executeScript } = require("../engine/scriptRuntime");
       const g = await getScriptInternal(req.params.sid);
       if (!g.success) return reply.code(404).send(g);
-      const r = await executeScript(req.params.id, g.script.code || "", {
+      const code = g.script.code || "";
+
+      // Bug #1 fix: Ethical linter check — trước đây endpoint này bỏ qua hoàn toàn
+      const { checkEthical } = require("../engine/scriptRunner");
+      const lint = checkEthical(code);
+      if (!lint.ok) {
+        const { appendAuditLog } = require("../logging/auditLogger");
+        appendAuditLog('VIOLATION_BLOCKED', `[rest/profiles/scripts/execute] ${lint.reason}`, req.params.id);
+        return reply.code(403).send({ success: false, error: `EthicalViolationError: ${lint.reason}` });
+      }
+
+      const r = await executeScript(req.params.id, code, {
         timeoutMs: Math.min(300000, Number(req.body?.timeoutMs || 120000)),
       });
       reply.send(r);
