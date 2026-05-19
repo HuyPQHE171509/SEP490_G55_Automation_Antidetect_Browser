@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Search, X } from 'lucide-react';
 import './ProfileList.css';
-import FingerprintInspector from './FingerprintInspector';
+import ElementPicker from './ElementPicker';
 
 function ProxyPickerPopup({ profile, isRunning = false, onClose, onSaved }) {
   const [proxies, setProxies] = useState([]);
@@ -793,12 +793,11 @@ export default function ProfileList({
         </div>
       )}
 
-      {/* Fingerprint Inspector Modal — mở khi nhấn nút 🔍 Inspect trên profile đang chạy */}
+      {/* Element Picker — mở khi nhấn nút 🔍 Inspect trên profile đang chạy */}
       {inspectingProfile && (
-        <FingerprintInspector
+        <ElementPicker
           profileId={inspectingProfile.id}
           profileName={inspectingProfile.name}
-          configuredFp={inspectingProfile.fingerprint || {}}
           onClose={() => setInspectingProfile(null)}
         />
       )}

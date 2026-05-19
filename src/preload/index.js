@@ -106,6 +106,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   scriptRunNow: (scriptId) => ipcRenderer.invoke('script-run-now', scriptId),
   // Inspect Fingerprint: read live fingerprint values from a running browser profile
   inspectFingerprint: (profileId) => ipcRenderer.invoke('profile-inspect-fingerprint', profileId),
+
+  // Element Picker: điều khiển browser từ picker panel
+  elementPickerGetUrl: (profileId) => ipcRenderer.invoke('element-picker:get-url', profileId),
+  elementPickerNavigate: (profileId, url) => ipcRenderer.invoke('element-picker:navigate', profileId, url),
+  elementPickerBringToFront: (profileId) => ipcRenderer.invoke('element-picker:bring-to-front', profileId),
+  elementPickerStartPicking: (profileId) => ipcRenderer.invoke('element-picker:start-picking', profileId),
+  elementPickerStopPicking: (profileId) => ipcRenderer.invoke('element-picker:stop-picking', profileId),
+  elementPickerGetInfo: (profileId, selector) => ipcRenderer.invoke('element-picker:get-element-info', profileId, selector),
+  elementPickerAction: (profileId, action, ...args) => ipcRenderer.invoke('element-picker:action', profileId, action, ...args),
+  onSelectorPicked: (callback) => {
+    const listener = (_e, data) => callback(data);
+    ipcRenderer.on('element-picker:selector-picked', listener);
+    return () => ipcRenderer.removeListener('element-picker:selector-picked', listener);
+  },
   getTaskLogs: () => ipcRenderer.invoke('task-logs-list'),
   getTaskLog: (id) => ipcRenderer.invoke('task-logs-get', id),
   deleteTaskLog: (id) => ipcRenderer.invoke('task-logs-delete', id),

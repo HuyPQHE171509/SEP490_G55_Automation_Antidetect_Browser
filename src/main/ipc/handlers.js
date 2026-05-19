@@ -1,4 +1,4 @@
-const { ipcMain, shell } = require('electron');
+const { ipcMain, shell, BrowserWindow } = require('electron');
 const { appendLog } = require('../logging/logger');
 const {
   launchProfileInternal,
@@ -582,6 +582,252 @@ function registerIpcHandlers(extra = {}) {
   handle('open-external', async (_e, url) => {
     try { await shell.openExternal(String(url)); return { success: true }; }
     catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  // ── Element Picker: điều khiển browser từ UI picker panel ───────────────────
+
+  // Lấy URL trang hiện tại của profile đang chạy
+  handle('element-picker:get-url', async (_e, profileId) => {
+    try {
+      const { runningProfiles } = require('../state/runtime');
+      const running = runningProfiles.get(profileId);
+      if (!running) return { success: false, error: 'Profile not running' };
+      const pages = (running.context?.pages() || []).filter(p => !p.isClosed?.());
+      if (!pages.length) return { success: false, error: 'No pages open' };
+      return { success: true, url: pages[0].url() };
+    } catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  // Điều hướng trang browser tới URL mới
+  handle('element-picker:navigate', async (_e, profileId, url) => {
+    try {
+      const { runningProfiles } = require('../state/runtime');
+      const running = runningProfiles.get(profileId);
+      if (!running) return { success: false, error: 'Profile not running' };
+      const context = running.context;
+      if (!context) return { success: false, error: 'No context' };
+      let page = context.pages().find(p => !p.isClosed?.());
+      if (!page) page = await context.newPage();
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      return { success: true, url: page.url() };
+    } catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  // Đưa cửa sổ browser lên foreground
+  handle('element-picker:bring-to-front', async (_e, profileId) => {
+    try {
+      const { runningProfiles } = require('../state/runtime');
+      const running = runningProfiles.get(profileId);
+      if (!running) return { success: false, error: 'Profile not running' };
+      const page = (running.context?.pages() || []).find(p => !p.isClosed?.());
+      if (page) await page.bringToFront();
+      return { success: true };
+    } catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  // Bật chế độ hover-pick: inject script lắng nghe Ctrl+mouseover, tạo đầy đủ CSS/XPath/Text selectors
+  handle('element-picker:start-picking', async (_e, profileId) => {
+    try {
+      const { runningProfiles } = require('../state/runtime');
+      const running = runningProfiles.get(profileId);
+      if (!running) return { success: false, error: 'Profile not running' };
+      const page = (running.context?.pages() || []).find(p => !p.isClosed?.());
+      if (!page) return { success: false, error: 'No pages open' };
+
+      // Expose callback Node.js → browser (ignore if already exposed from previous picker open)
+      try {
+        await page.exposeFunction('__obt_ep_pick', (data) => {
+          for (const w of BrowserWindow.getAllWindows()) {
+            try { w.webContents.send('element-picker:selector-picked', data); } catch {}
+          }
+        });
+      } catch { /* already exposed — safe to ignore */ }
+
+      // Inject idempotent event listener with full selector generation
+      await page.evaluate(() => {
+        // ── CSS selector: tag + all classes (Tailwind-friendly), fallback to structural path
+        function getCssSelector(el) {
+          if (el.id) return '#' + CSS.escape(el.id);
+          const tag = el.tagName.toLowerCase();
+          if (el.classList && el.classList.length > 0) {
+            return tag + Array.from(el.classList).map(c => '.' + CSS.escape(c)).join('');
+          }
+          // structural fallback
+          const parts = [];
+          let cur = el;
+          while (cur && cur.nodeType === 1 && cur !== document.documentElement) {
+            if (cur.id) { parts.unshift('#' + CSS.escape(cur.id)); break; }
+            let sel = cur.nodeName.toLowerCase();
+            let nth = 1, sib = cur.previousElementSibling;
+            while (sib) { nth++; sib = sib.previousElementSibling; }
+            if (nth > 1) sel += ':nth-child(' + nth + ')';
+            parts.unshift(sel);
+            cur = cur.parentElement;
+          }
+          return parts.join(' > ') || tag;
+        }
+
+        // ── XPath: walk up to nearest ancestor with ID, then build path
+        function getXPath(el) {
+          const parts = [];
+          let cur = el;
+          while (cur && cur.nodeType === 1) {
+            if (cur.id) { parts.unshift('*[@id="' + cur.id + '"]'); break; }
+            const tag = cur.nodeName.toLowerCase();
+            const parent = cur.parentElement;
+            if (parent) {
+              const sameTag = Array.from(parent.children).filter(c => c.nodeName === cur.nodeName);
+              parts.unshift(sameTag.length > 1 ? tag + '[' + (sameTag.indexOf(cur) + 1) + ']' : tag);
+            } else {
+              parts.unshift(tag);
+            }
+            cur = parent;
+          }
+          return '//' + parts.join('/');
+        }
+
+        // ── Text selector: only for short single-line text
+        function getTextSelector(el) {
+          const text = (el.innerText || '').trim();
+          if (!text || text.length > 80 || text.includes('\n')) return null;
+          return 'text=' + text;
+        }
+
+        // Remove old listener before re-injecting (idempotent)
+        if (window.__obt_ep_handler) {
+          document.removeEventListener('mouseover', window.__obt_ep_handler, true);
+        }
+        // Highlight style
+        if (!document.getElementById('__obt_ep_style')) {
+          const s = document.createElement('style');
+          s.id = '__obt_ep_style';
+          s.textContent = '.__obt_ep_hl{outline:2px solid #00d2d3!important;outline-offset:2px!important;background:rgba(0,210,211,0.07)!important}';
+          document.head.appendChild(s);
+        }
+
+        window.__obt_ep_handler = function(e) {
+          if (!e.ctrlKey && !e.metaKey) return;
+          e.stopPropagation();
+          e.preventDefault();
+          const el = e.target;
+          document.querySelectorAll('.__obt_ep_hl').forEach(x => x.classList.remove('__obt_ep_hl'));
+          el.classList.add('__obt_ep_hl');
+
+          const rect = el.getBoundingClientRect();
+          const cssSelector = getCssSelector(el);
+
+          window.__obt_ep_pick({
+            // Selector variants
+            cssSelector,
+            xpath:        getXPath(el),
+            textSelector: getTextSelector(el),
+            // Element identity
+            tagName:     el.tagName.toLowerCase(),
+            id:          el.id || null,
+            classes:     el.className || null,
+            text:        (el.innerText || el.textContent || '').trim().slice(0, 300),
+            // Attributes
+            href:        el.getAttribute('href') || null,
+            src:         el.getAttribute('src') || null,
+            type:        el.getAttribute('type') || null,
+            name:        el.getAttribute('name') || null,
+            placeholder: el.getAttribute('placeholder') || null,
+            value:       el.value !== undefined ? String(el.value) : null,
+            // Geometry
+            position:    { x: Math.round(e.clientX), y: Math.round(e.clientY) },
+            boundingBox: {
+              x:      Math.round(rect.left),
+              y:      Math.round(rect.top),
+              width:  Math.round(rect.width),
+              height: Math.round(rect.height),
+            },
+          });
+        };
+        document.addEventListener('mouseover', window.__obt_ep_handler, true);
+      });
+      return { success: true };
+    } catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  // Tắt chế độ hover-pick, xoá listener và highlight
+  handle('element-picker:stop-picking', async (_e, profileId) => {
+    try {
+      const { runningProfiles } = require('../state/runtime');
+      const running = runningProfiles.get(profileId);
+      if (!running) return { success: true };
+      const page = (running.context?.pages() || []).find(p => !p.isClosed?.());
+      if (page) {
+        await page.evaluate(() => {
+          if (window.__obt_ep_handler) {
+            document.removeEventListener('mouseover', window.__obt_ep_handler, true);
+            window.__obt_ep_handler = null;
+          }
+          document.querySelectorAll('.__obt_ep_hl').forEach(x => x.classList.remove('__obt_ep_hl'));
+        }).catch(() => {});
+      }
+      return { success: true };
+    } catch (e) { return { success: true }; }
+  });
+
+  // Lấy thông tin chi tiết của element theo selector
+  handle('element-picker:get-element-info', async (_e, profileId, selector) => {
+    try {
+      const { runningProfiles } = require('../state/runtime');
+      const running = runningProfiles.get(profileId);
+      if (!running) return { success: false, error: 'Profile not running' };
+      const page = (running.context?.pages() || []).find(p => !p.isClosed?.());
+      if (!page) return { success: false, error: 'No pages' };
+      const info = await page.evaluate((sel) => {
+        try {
+          const el = document.querySelector(sel);
+          if (!el) return null;
+          const rect = el.getBoundingClientRect();
+          const attrs = {};
+          for (const a of el.attributes) attrs[a.name] = a.value;
+          return {
+            tagName: el.tagName.toLowerCase(),
+            id: el.id || null,
+            className: el.className || null,
+            text: (el.textContent || '').trim().slice(0, 300),
+            href: el.getAttribute('href') || null,
+            src: el.getAttribute('src') || null,
+            type: el.getAttribute('type') || null,
+            name: el.getAttribute('name') || null,
+            placeholder: el.getAttribute('placeholder') || null,
+            value: el.value !== undefined ? String(el.value) : null,
+            visible: el.offsetParent !== null,
+            rect: { top: Math.round(rect.top), left: Math.round(rect.left), width: Math.round(rect.width), height: Math.round(rect.height) },
+            attrs,
+          };
+        } catch { return null; }
+      }, selector);
+      return { success: true, info };
+    } catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  // Thực thi các action từ Element Picker (click, hover, fill, press key, scroll, nav)
+  handle('element-picker:action', async (_e, profileId, action, ...args) => {
+    try {
+      if (action === 'click-element') return await performAction(profileId, 'click.element', { selector: args[0], timeout: 5000 });
+      if (action === 'hover-element') return await performAction(profileId, 'hover', { selector: args[0], timeout: 5000 });
+      if (action === 'double-click') return await performAction(profileId, 'element.dblclick', { selector: args[0], timeout: 5000 });
+      if (action === 'click-point') return await performAction(profileId, 'mouse.click', { x: args[0], y: args[1] });
+      if (action === 'fill') return await performAction(profileId, 'input.fill', { selector: args[0], value: args[1], timeout: 5000 });
+      if (action === 'press-key') return await performAction(profileId, 'keyboard.pressKey', { key: args[0] });
+      if (action === 'nav-back') return await performAction(profileId, 'nav.back', {});
+      if (action === 'nav-forward') return await performAction(profileId, 'nav.forward', {});
+      if (action === 'nav-reload') return await performAction(profileId, 'nav.reload', {});
+      if (action === 'scroll') {
+        const { runningProfiles } = require('../state/runtime');
+        const running = runningProfiles.get(profileId);
+        if (!running) return { success: false, error: 'Profile not running' };
+        const page = (running.context?.pages() || []).find(p => !p.isClosed?.());
+        if (!page) return { success: false, error: 'No pages' };
+        await page.evaluate((dir) => window.scrollBy({ top: dir === 'up' ? -300 : 300, behavior: 'smooth' }), args[0]);
+        return { success: true };
+      }
+      return { success: false, error: `Unknown action: ${action}` };
+    } catch (e) { return { success: false, error: e?.message || String(e) }; }
   });
 
   // Các bộ điều khiển Máy chủ Local REST API (Chỉ kích hoạt nếu restServer được truyền vào lúc khởi động)
