@@ -127,7 +127,9 @@ export default function MacroManager({ profiles = [] }) {
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const statusTimerRef = useRef(null);
+  const recUnsubRef = useRef(null);
 
   const loadMacros = useCallback(async () => {
     try {
@@ -252,6 +254,30 @@ export default function MacroManager({ profiles = [] }) {
 
   useEffect(() => () => clearTimeout(statusTimerRef.current), []);
 
+  useEffect(() => () => {
+    if (recUnsubRef.current) { recUnsubRef.current(); recUnsubRef.current = null; }
+  }, []);
+
+  async function startRecording() {
+    if (!runProfileId) { alert('Chọn profile trước khi ghi.'); return; }
+    const r = await window.electronAPI.startMacroRecord(runProfileId);
+    if (!r?.success) { alert(r?.error || 'Không thể bắt đầu ghi.'); return; }
+    setIsRecording(true);
+    if (recUnsubRef.current) recUnsubRef.current();
+    recUnsubRef.current = window.electronAPI.onMacroRecordStep((data) => {
+      if (data.profileId !== runProfileId) return;
+      const step = { ...data.step, id: Math.random().toString(36).slice(2, 10) };
+      setSteps(prev => [...prev, step]);
+      setDirty(true);
+    });
+  }
+
+  async function stopRecording() {
+    if (recUnsubRef.current) { recUnsubRef.current(); recUnsubRef.current = null; }
+    setIsRecording(false);
+    if (runProfileId) await window.electronAPI.stopMacroRecord(runProfileId).catch(() => {});
+  }
+
   const selected = macros.find(m => m.id === selectedId);
   const hasEditor = selectedId !== null || dirty;
 
@@ -337,6 +363,24 @@ export default function MacroManager({ profiles = [] }) {
               </div>
             </div>
 
+            {/* Recording banner */}
+            {isRecording && (
+              <div style={{
+                padding: '8px 20px', background: '#fff1f2',
+                borderBottom: '1px solid #fecdd3',
+                display: 'flex', alignItems: 'center', gap: 10,
+                color: '#be123c', fontSize: 13, fontWeight: 600, flexShrink: 0,
+              }}>
+                <style>{`@keyframes obt-blink{0%,100%{opacity:1}50%{opacity:.25}}`}</style>
+                <span style={{ fontSize: 16, animation: 'obt-blink 1s ease-in-out infinite' }}>●</span>
+                <span>Đang ghi — thực hiện thao tác trên trình duyệt, các bước sẽ tự thêm vào đây</span>
+                <button
+                  onClick={stopRecording}
+                  style={{ marginLeft: 'auto', fontSize: 12, padding: '3px 12px', borderRadius: 5, border: '1px solid #be123c', background: 'transparent', color: '#be123c', cursor: 'pointer', fontWeight: 700 }}
+                >■ Dừng</button>
+              </div>
+            )}
+
             {/* Steps */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px' }}>
               {steps.length === 0 && (
@@ -377,14 +421,35 @@ export default function MacroManager({ profiles = [] }) {
               </div>
               <button
                 onClick={runMacro}
-                disabled={running || !selectedId || !runProfileId || steps.length === 0}
+                disabled={running || isRecording || !selectedId || !runProfileId || steps.length === 0}
                 style={{
                   fontSize: 14, padding: '7px 22px', borderRadius: 7, border: 'none',
                   background: running ? '#86efac' : '#22c55e',
-                  color: '#fff', cursor: running || !selectedId || !runProfileId || steps.length === 0 ? 'not-allowed' : 'pointer',
+                  color: '#fff', cursor: running || isRecording || !selectedId || !runProfileId || steps.length === 0 ? 'not-allowed' : 'pointer',
                   fontWeight: 700, opacity: (!selectedId || !runProfileId || steps.length === 0) ? 0.5 : 1,
                 }}
-              >{running ? '⏳ Running…' : '▶ Run Macro'}</button>
+              >{running ? '⏳ Running…' : '▶ Run'}</button>
+
+              <div style={{ width: 1, height: 26, background: 'var(--border, #e5e7eb)', flexShrink: 0 }} />
+
+              <button
+                onClick={isRecording ? stopRecording : startRecording}
+                disabled={running || !runProfileId}
+                title={isRecording ? 'Dừng ghi' : 'Bắt đầu ghi thao tác từ trình duyệt'}
+                style={{
+                  fontSize: 13, padding: '7px 16px', borderRadius: 7, border: 'none',
+                  background: isRecording ? '#ef4444' : '#6366f1',
+                  color: '#fff',
+                  cursor: running || !runProfileId ? 'not-allowed' : 'pointer',
+                  fontWeight: 700,
+                  opacity: running || !runProfileId ? 0.45 : 1,
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                {isRecording
+                  ? <><span style={{ fontSize: 11 }}>■</span> Dừng ghi</>
+                  : <><span style={{ color: '#fca5a5' }}>●</span> Ghi Macro</>}
+              </button>
               {runResult && (
                 <div style={{
                   fontSize: 13, padding: '6px 12px', borderRadius: 6,

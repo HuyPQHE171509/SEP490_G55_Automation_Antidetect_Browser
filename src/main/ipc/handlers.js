@@ -43,6 +43,80 @@ const { checkProxy, checkProxiesBatch } = require('../services/ProxyChecker');
 const { getMachineCode, validateLicenseKey, deactivateLicense } = require('../services/machineId');
 const { checkBrowserStatus, installBrowser, uninstallBrowser, reinstallBrowser } = require('../services/browserManagerService');
 
+const macroRecorders = new Map();
+
+async function injectMacroRecorderScript(page) {
+  await page.evaluate(() => {
+    function getCssSelector(el) {
+      try {
+        if (el.id) return '#' + CSS.escape(el.id);
+        const dt = el.getAttribute && el.getAttribute('data-testid');
+        if (dt) return '[data-testid="' + dt.replace(/"/g, '\\"') + '"]';
+        const tag = el.tagName.toLowerCase();
+        if (el.classList && el.classList.length > 0) {
+          const cls = Array.from(el.classList).slice(0, 3)
+            .map(c => { try { return '.' + CSS.escape(c); } catch { return ''; } }).join('');
+          return tag + cls;
+        }
+        const parts = [];
+        let cur = el;
+        while (cur && cur.nodeType === 1 && cur !== document.documentElement) {
+          if (cur.id) { parts.unshift('#' + CSS.escape(cur.id)); break; }
+          let sel = cur.nodeName.toLowerCase();
+          let nth = 1, sib = cur.previousElementSibling;
+          while (sib) { nth++; sib = sib.previousElementSibling; }
+          if (nth > 1) sel += ':nth-child(' + nth + ')';
+          parts.unshift(sel);
+          cur = cur.parentElement;
+        }
+        return parts.join(' > ') || tag;
+      } catch { return el.tagName ? el.tagName.toLowerCase() : 'unknown'; }
+    }
+    if (window.__obt_rec_click) { document.removeEventListener('click', window.__obt_rec_click, true); window.__obt_rec_click = null; }
+    if (window.__obt_rec_change) { document.removeEventListener('change', window.__obt_rec_change, true); window.__obt_rec_change = null; }
+    if (window.__obt_rec_keydown) { document.removeEventListener('keydown', window.__obt_rec_keydown, true); window.__obt_rec_keydown = null; }
+    if (!window.__obt_macro_rec) return;
+    window.__obt_rec_click = function(e) {
+      try {
+        const el = e.target;
+        if (!el || !el.tagName) return;
+        const tag = el.tagName.toLowerCase();
+        if (['input', 'textarea', 'select', 'option'].includes(tag)) return;
+        window.__obt_macro_rec({
+          type: 'click.element',
+          params: { selector: getCssSelector(el) },
+          label: (el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '').trim().slice(0, 60),
+          delay: 0,
+        });
+      } catch {}
+    };
+    window.__obt_rec_change = function(e) {
+      try {
+        const el = e.target;
+        if (!el || !el.tagName) return;
+        if (!['input', 'textarea', 'select'].includes(el.tagName.toLowerCase())) return;
+        window.__obt_macro_rec({
+          type: 'input.fill',
+          params: { selector: getCssSelector(el), value: el.value || '' },
+          label: (el.placeholder || el.name || el.getAttribute('aria-label') || '').trim().slice(0, 60),
+          delay: 0,
+        });
+      } catch {}
+    };
+    const SKEYS = new Set(['Enter', 'Tab', 'Escape', 'F1', 'F2', 'F3', 'F4', 'F5', 'F12', 'Backspace', 'Delete', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']);
+    window.__obt_rec_keydown = function(e) {
+      try {
+        if (SKEYS.has(e.key)) {
+          window.__obt_macro_rec({ type: 'keyboard.pressKey', params: { key: e.key }, label: 'Press ' + e.key, delay: 0 });
+        }
+      } catch {}
+    };
+    document.addEventListener('click', window.__obt_rec_click, true);
+    document.addEventListener('change', window.__obt_rec_change, true);
+    document.addEventListener('keydown', window.__obt_rec_keydown, true);
+  });
+}
+
 function registerIpcHandlers(extra = {}) {
   // Hàm đăng ký an toàn: Xóa handler cũ nếu có để hỗ trợ tính năng hot-reload (tải lại nóng) trong quá trình dev
   const handle = (channel, fn) => {
@@ -873,6 +947,72 @@ function registerIpcHandlers(extra = {}) {
       }
       return { success: true };
     } catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  // ── Macro Recording ──────────────────────────────────────────────────────
+  handle('macro-record-start', async (_e, profileId) => {
+    try {
+      const { runningProfiles } = require('../state/runtime');
+      const running = runningProfiles.get(profileId);
+      if (!running) return { success: false, error: 'Profile is not running. Please launch the profile first.' };
+      const page = (running.context?.pages() || []).find(p => !p.isClosed?.());
+      if (!page) return { success: false, error: 'No pages open in this profile.' };
+
+      const prev = macroRecorders.get(profileId);
+      if (prev) { try { prev.cleanup(); } catch {} }
+
+      const sendStep = (step) => {
+        for (const w of BrowserWindow.getAllWindows()) {
+          try { w.webContents.send('macro:record-step', { profileId, step }); } catch {}
+        }
+      };
+
+      try { await page.exposeFunction('__obt_macro_rec', (data) => sendStep(data)); } catch { /* already exposed */ }
+
+      let lastUrl = page.url();
+      let navActive = false;
+      setTimeout(() => { navActive = true; }, 400);
+
+      const navHandler = (frame) => {
+        try {
+          if (!navActive || frame.parentFrame()) return;
+          const url = frame.url();
+          if (!url || url === 'about:blank') return;
+          const base = u => u.split('#')[0];
+          if (base(url) === base(lastUrl)) { lastUrl = url; return; }
+          lastUrl = url;
+          sendStep({ type: 'nav.goto', params: { url }, label: '', delay: 0 });
+        } catch {}
+      };
+
+      const loadHandler = async () => { try { await injectMacroRecorderScript(page); } catch {} };
+
+      page.on('framenavigated', navHandler);
+      page.on('load', loadHandler);
+      await injectMacroRecorderScript(page);
+
+      macroRecorders.set(profileId, {
+        cleanup: () => {
+          try { page.off('framenavigated', navHandler); } catch {}
+          try { page.off('load', loadHandler); } catch {}
+          page.evaluate(() => {
+            if (window.__obt_rec_click) { document.removeEventListener('click', window.__obt_rec_click, true); window.__obt_rec_click = null; }
+            if (window.__obt_rec_change) { document.removeEventListener('change', window.__obt_rec_change, true); window.__obt_rec_change = null; }
+            if (window.__obt_rec_keydown) { document.removeEventListener('keydown', window.__obt_rec_keydown, true); window.__obt_rec_keydown = null; }
+          }).catch(() => {});
+          macroRecorders.delete(profileId);
+        },
+      });
+      return { success: true };
+    } catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  handle('macro-record-stop', async (_e, profileId) => {
+    try {
+      const rec = macroRecorders.get(profileId);
+      if (rec) rec.cleanup();
+      return { success: true };
+    } catch { return { success: true }; }
   });
 
   // Các bộ điều khiển Máy chủ Local REST API (Chỉ kích hoạt nếu restServer được truyền vào lúc khởi động)

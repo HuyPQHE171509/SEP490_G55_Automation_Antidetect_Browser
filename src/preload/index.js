@@ -126,6 +126,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveMacro: (macro) => ipcRenderer.invoke('macro-save', macro),
   deleteMacro: (id) => ipcRenderer.invoke('macro-delete', id),
   runMacro: (macroId, profileId) => ipcRenderer.invoke('macro-run', macroId, profileId),
+  startMacroRecord: (profileId) => ipcRenderer.invoke('macro-record-start', profileId),
+  stopMacroRecord: (profileId) => ipcRenderer.invoke('macro-record-stop', profileId),
+  onMacroRecordStep: (callback) => {
+    const listener = (_e, data) => callback(data);
+    ipcRenderer.on('macro:record-step', listener);
+    return () => ipcRenderer.removeListener('macro:record-step', listener);
+  },
+  removeAllMacroRecordStep: () => ipcRenderer.removeAllListeners('macro:record-step'),
 
   getTaskLogs: () => ipcRenderer.invoke('task-logs-list'),
   getTaskLog: (id) => ipcRenderer.invoke('task-logs-get', id),
