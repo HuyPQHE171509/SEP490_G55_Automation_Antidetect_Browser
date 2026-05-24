@@ -830,6 +830,51 @@ function registerIpcHandlers(extra = {}) {
     } catch (e) { return { success: false, error: e?.message || String(e) }; }
   });
 
+  // ── Macro CRUD & execution ──────────────────────────────────────────────
+  const { listMacrosInternal, getMacroInternal, saveMacroInternal, deleteMacroInternal } = require('../storage/macros');
+
+  handle('macro-list', async () => {
+    try { return { success: true, macros: await listMacrosInternal() }; }
+    catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  handle('macro-get', async (_e, id) => {
+    try { return await getMacroInternal(id); }
+    catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  handle('macro-save', async (_e, macro) => {
+    try { return await saveMacroInternal(macro); }
+    catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  handle('macro-delete', async (_e, id) => {
+    try { return await deleteMacroInternal(id); }
+    catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  handle('macro-run', async (_e, macroId, profileId) => {
+    try {
+      const result = await getMacroInternal(macroId);
+      if (!result.success) return result;
+      const macro = result.macro;
+      const { runningProfiles } = require('../state/runtime');
+      if (!runningProfiles.has(profileId)) return { success: false, error: 'Profile is not running' };
+      for (let i = 0; i < macro.steps.length; i++) {
+        const step = macro.steps[i];
+        if (step.delay && step.delay > 0) {
+          await new Promise(r => setTimeout(r, step.delay));
+        }
+        try {
+          await performAction(profileId, step.type, step.params || {});
+        } catch (e) {
+          return { success: false, error: `Step ${i + 1} "${step.label || step.type}" failed: ${e?.message || e}`, stepIndex: i };
+        }
+      }
+      return { success: true };
+    } catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
   // Các bộ điều khiển Máy chủ Local REST API (Chỉ kích hoạt nếu restServer được truyền vào lúc khởi động)
   if (extra.restServer) {
     const rest = extra.restServer;

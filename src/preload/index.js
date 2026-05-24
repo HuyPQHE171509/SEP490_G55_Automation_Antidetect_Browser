@@ -120,6 +120,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('element-picker:selector-picked', listener);
     return () => ipcRenderer.removeListener('element-picker:selector-picked', listener);
   },
+  // Macros
+  listMacros: () => ipcRenderer.invoke('macro-list'),
+  getMacro: (id) => ipcRenderer.invoke('macro-get', id),
+  saveMacro: (macro) => ipcRenderer.invoke('macro-save', macro),
+  deleteMacro: (id) => ipcRenderer.invoke('macro-delete', id),
+  runMacro: (macroId, profileId) => ipcRenderer.invoke('macro-run', macroId, profileId),
+
   getTaskLogs: () => ipcRenderer.invoke('task-logs-list'),
   getTaskLog: (id) => ipcRenderer.invoke('task-logs-get', id),
   deleteTaskLog: (id) => ipcRenderer.invoke('task-logs-delete', id),

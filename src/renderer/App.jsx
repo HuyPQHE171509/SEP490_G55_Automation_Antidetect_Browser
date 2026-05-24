@@ -13,6 +13,7 @@ import LicenseModal from './components/LicenseModal';
 import EngineInstallModal from './components/EngineInstallModal';
 import LinkProxyModal from './components/LinkProxyModal';
 import LivePreviewPanel from './components/LivePreviewPanel';
+import MacroManager from './components/MacroManager';
 import './App.css';
 import { useI18n } from './i18n/index';
  
@@ -614,6 +615,11 @@ function App() {
             onRunScript={(pid, sid) => { }}
             fullPage={true}
           />
+        );
+
+      case 'macros':
+        return (
+          <MacroManager profiles={profiles} />
         );
 
       case 'proxies':
