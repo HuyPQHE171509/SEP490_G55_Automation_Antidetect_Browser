@@ -57,6 +57,10 @@ const VERSION = pkg.version || '0.0.0';
 const OUTPUT_DIR = path.resolve(ROOT, pkg.build?.directories?.output || 'release');
 
 const UPLOAD_URL = process.env.RELEASE_UPLOAD_URL || 'http://localhost:3001/api/admin/releases';
+// Feed endpoint cho electron-updater (latest.yml + installer + blockmap).
+// Suy ra từ UPLOAD_URL: thay '/releases' → '/updates'.
+const UPDATES_UPLOAD_URL = process.env.RELEASE_UPDATES_URL
+  || UPLOAD_URL.replace(/\/releases(\/?$)/, '/updates$1');
 const TOKEN = process.env.RELEASE_UPLOAD_TOKEN;
 const NOTES = process.env.RELEASE_NOTES || '';
 const PLATFORM_OVERRIDE = process.env.RELEASE_PLATFORM || '';
@@ -94,6 +98,93 @@ function findInstaller() {
     return b.stat.mtimeMs - a.stat.mtimeMs;
   });
   return candidates[0].full;
+}
+
+// ── Multipart cho NHIỀU file (field 'files') phục vụ feed electron-updater ──
+function buildMultipartFiles(filePaths) {
+  const boundary = `----gsdFeed${Date.now().toString(16)}${Math.random().toString(16).slice(2, 8)}`;
+  const CRLF = '\r\n';
+  const parts = filePaths.map((fp) => {
+    const fileName = path.basename(fp);
+    const stat = fs.statSync(fp);
+    const preamble = Buffer.from(
+      `--${boundary}${CRLF}` +
+      `Content-Disposition: form-data; name="files"; filename="${fileName}"${CRLF}` +
+      `Content-Type: application/octet-stream${CRLF}${CRLF}`,
+      'utf8',
+    );
+    return { fp, preamble, size: stat.size };
+  });
+  const closingBoundary = Buffer.from(`${CRLF}--${boundary}--${CRLF}`, 'utf8');
+  const interCRLF = Buffer.from(CRLF, 'utf8');
+  const totalLength =
+    parts.reduce((s, p) => s + p.preamble.length + p.size + interCRLF.length, 0) +
+    closingBoundary.length;
+  return { boundary, parts, interCRLF, closingBoundary, totalLength };
+}
+
+function uploadFiles(filePaths) {
+  return new Promise((resolve, reject) => {
+    const { boundary, parts, interCRLF, closingBoundary, totalLength } = buildMultipartFiles(filePaths);
+    const url = new URL(UPDATES_UPLOAD_URL);
+    const client = url.protocol === 'https:' ? https : http;
+
+    const req = client.request({
+      protocol: url.protocol,
+      hostname: url.hostname,
+      port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${TOKEN}`,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': totalLength,
+      },
+    }, (res) => {
+      let data = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          try { resolve(JSON.parse(data)); } catch { resolve({ raw: data }); }
+        } else {
+          let parsed = null;
+          try { parsed = JSON.parse(data); } catch {}
+          reject(new Error(`HTTP ${res.statusCode}: ${parsed?.error || data || 'feed upload failed'}`));
+        }
+      });
+    });
+    req.on('error', reject);
+
+    // Ghi tuần tự từng file (đồng bộ bằng promise chain để backpressure đúng).
+    let i = 0;
+    const writeNext = () => {
+      if (i >= parts.length) {
+        req.write(closingBoundary);
+        req.end();
+        return;
+      }
+      const part = parts[i++];
+      req.write(part.preamble);
+      const stream = fs.createReadStream(part.fp);
+      stream.on('data', (chunk) => { if (!req.write(chunk)) stream.pause(); });
+      req.on('drain', () => stream.resume());
+      stream.on('end', () => { req.write(interCRLF); writeNext(); });
+      stream.on('error', reject);
+    };
+    writeNext();
+  });
+}
+
+// Gồm latest.yml + installer .exe + .exe.blockmap (nếu có) trong OUTPUT_DIR.
+function findFeedFiles(installerPath) {
+  const files = [];
+  const yml = path.join(OUTPUT_DIR, 'latest.yml');
+  if (fs.existsSync(yml)) files.push(yml);
+  if (installerPath && fs.existsSync(installerPath)) files.push(installerPath);
+  const blockmap = installerPath ? `${installerPath}.blockmap` : '';
+  if (blockmap && fs.existsSync(blockmap)) files.push(blockmap);
+  return files;
 }
 
 function buildMultipart(filePath, fields) {
@@ -198,6 +289,20 @@ async function main() {
 
   const entry = await upload(filePath, { version: VERSION, notes: NOTES, platform });
   console.log(`[upload-release] OK — id=${entry.id} downloadUrl=${entry.downloadUrl}`);
+
+  // ── Đẩy feed electron-updater (delta + tự restart) chỉ cho Windows ──────────
+  if (platform === 'windows') {
+    const feedFiles = findFeedFiles(filePath);
+    const hasYml = feedFiles.some((f) => path.basename(f) === 'latest.yml');
+    if (!hasYml) {
+      console.warn('[upload-release] latest.yml không có trong release/ — bỏ qua feed upload (delta sẽ không khả dụng).');
+    } else {
+      console.log(`[upload-release] feed → ${UPDATES_UPLOAD_URL}`);
+      console.log(`[upload-release] feed files: ${feedFiles.map((f) => path.basename(f)).join(', ')}`);
+      const r = await uploadFiles(feedFiles);
+      console.log(`[upload-release] feed OK — ${(r.files || []).map((f) => f.name).join(', ')}`);
+    }
+  }
 }
 
 main().catch((err) => fail(err.message || String(err)));

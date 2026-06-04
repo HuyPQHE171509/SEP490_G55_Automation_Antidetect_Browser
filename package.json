@@ -55,6 +55,12 @@
     "directories": {
       "output": "release"
     },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://sep490-g55-automation-antidetect-browser.onrender.com/api/updates/"
+      }
+    ],
     "extraResources": [
       {
         "from": "build/1.png",
@@ -143,6 +149,7 @@
     "cors": "^2.8.6",
     "drizzle-orm": "^0.45.0",
     "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.3",
     "express": "^5.2.1",
     "fastify": "^5.8.2",
     "fingerprint-generator": "^2.1.55",
