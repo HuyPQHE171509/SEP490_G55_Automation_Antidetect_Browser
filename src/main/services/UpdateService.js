@@ -15,12 +15,11 @@
 const { app, BrowserWindow } = require('electron');
 const { autoUpdater } = require('electron-updater');
 
-// URL feed cập nhật — override qua env var khi deploy. Fallback trỏ Render để
-// app đóng gói vẫn cập nhật được mà không cần set env trên máy người dùng.
-const UPDATE_FEED_URL = (
-  process.env.UPDATE_FEED_URL
-  || 'https://sep490-g55-automation-antidetect-browser.onrender.com/api/updates'
-).replace(/\/$/, '');
+// Feed cập nhật: GitHub Releases (bền, không giới hạn dung lượng, hỗ trợ delta
+// qua HTTP Range). Có thể override bằng UPDATE_FEED_URL để trỏ feed generic khác.
+const UPDATE_FEED_URL = (process.env.UPDATE_FEED_URL || '').replace(/\/$/, '');
+const GH_OWNER = process.env.UPDATE_GH_OWNER || 'longnguyen231';
+const GH_REPO = process.env.UPDATE_GH_REPO || 'SEP490_G55_Automation_Antidetect_Browser';
 
 // ── Cấu hình electron-updater ───────────────────────────────────────────────
 autoUpdater.autoDownload = false;          // chỉ tải khi user bấm Cập nhật
@@ -35,7 +34,11 @@ autoUpdater.logger = {
   error: (m) => console.warn('[autoUpdater]', m?.message || m),
 };
 try {
-  autoUpdater.setFeedURL({ provider: 'generic', url: UPDATE_FEED_URL });
+  if (UPDATE_FEED_URL) {
+    autoUpdater.setFeedURL({ provider: 'generic', url: UPDATE_FEED_URL });
+  } else {
+    autoUpdater.setFeedURL({ provider: 'github', owner: GH_OWNER, repo: GH_REPO });
+  }
 } catch (e) {
   console.warn('[UpdateService] setFeedURL failed:', e?.message);
 }

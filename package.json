@@ -57,8 +57,10 @@
     },
     "publish": [
       {
-        "provider": "generic",
-        "url": "https://sep490-g55-automation-antidetect-browser.onrender.com/api/updates/"
+        "provider": "github",
+        "owner": "longnguyen231",
+        "repo": "SEP490_G55_Automation_Antidetect_Browser",
+        "releaseType": "release"
       }
     ],
     "extraResources": [
