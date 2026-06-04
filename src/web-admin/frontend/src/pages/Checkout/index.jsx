@@ -43,6 +43,12 @@ export default function CheckoutPage() {
       .catch(() => { setPriceLabel('—'); });
   }, []);
 
+  // Keep the email locked to the logged-in account so Pro status is detected
+  // by the same email everywhere (account === receipt === order binding).
+  useEffect(() => {
+    if (user?.email) setEmail(user.email);
+  }, [user?.email]);
+
   const displayPrice = priceLabel;
 
   if (!tierInfo) {
@@ -70,7 +76,7 @@ export default function CheckoutPage() {
       const res = await fetch('/api/create-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: trimmed, tier }),
+        body: JSON.stringify({ email: trimmed, accountEmail: user?.email || trimmed, tier }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to create payment');
@@ -136,8 +142,15 @@ export default function CheckoutPage() {
                 placeholder="your@email.com"
                 required
                 disabled={loading}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-[#00bcd4]/50 focus:ring-1 focus:ring-[#00bcd4]/30 disabled:opacity-50 transition"
+                readOnly={!!user?.email}
+                title={user?.email ? 'Linked to your account email' : undefined}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder:text-white/25 focus:outline-none focus:border-[#00bcd4]/50 focus:ring-1 focus:ring-[#00bcd4]/30 disabled:opacity-50 read-only:opacity-70 read-only:cursor-not-allowed transition"
               />
+              {user?.email && (
+                <p className="text-white/30 text-[11px] mt-1.5">
+                  Linked to your account so Pro unlocks automatically after payment.
+                </p>
+              )}
             </div>
 
             <button

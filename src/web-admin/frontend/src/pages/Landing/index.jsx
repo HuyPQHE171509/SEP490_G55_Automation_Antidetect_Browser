@@ -200,7 +200,7 @@ function FeatureCard({ icon, title, desc, index }) {
   return (
     <div
       ref={ref}
-      className={`bg-slate-800/50 border border-slate-700/60 rounded-2xl p-6 flex flex-col gap-4
+      className={`bg-slate-800/50 border border-slate-700/60 rounded-2xl p-4 flex flex-col gap-3
         transition-all duration-700 ease-out
         ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
       style={{ transitionDelay: `${index * 80}ms` }}
@@ -226,7 +226,7 @@ function StatItem({ value, label, index }) {
         ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}
       style={{ transitionDelay: `${index * 100}ms` }}
     >
-      <span className="text-4xl font-extrabold text-primary tracking-tight">{value}</span>
+      <span className="text-2xl font-extrabold text-primary tracking-tight">{value}</span>
       <span className="text-sm text-slate-400 text-center">{label}</span>
     </div>
   );
@@ -251,7 +251,7 @@ function PricingCard({ tier, index, isAuthenticated, isPro, isTrial, navigate, s
   return (
     <div
       ref={ref}
-      className={`relative flex flex-col rounded-2xl border p-8 transition-all duration-700 ease-out
+      className={`relative flex flex-col rounded-2xl border p-5 transition-all duration-700 ease-out
         ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}
         ${tier.highlight
           ? 'border-primary/50 bg-gradient-to-b from-primary/10 to-slate-800/60 shadow-2xl shadow-primary/10 scale-[1.03]'
@@ -277,11 +277,11 @@ function PricingCard({ tier, index, isAuthenticated, isPro, isTrial, navigate, s
           <span className="text-4xl font-black text-white">{tier.id === 'pro' ? (proPrice || tier.price) : tier.price}</span>
           <span className="text-slate-400 text-sm">/ {tier.period}</span>
         </div>
-        <p className="text-sm text-slate-400 leading-relaxed">{tier.description}</p>
+<p className="text-xs text-slate-400 leading-relaxed">{tier.description}</p>
       </div>
 
       {/* Features list */}
-      <ul className="flex flex-col gap-3 mb-8 flex-1">
+      <ul className="flex flex-col gap-2 mb-5 flex-1">
         {tier.features.map((f) => (
           <li key={f.text} className="flex items-center gap-2.5">
             {f.included ? (
@@ -421,7 +421,7 @@ const LandingPage = () => {
         className={`fixed top-0 inset-x-0 z-50 transition-all duration-300
           ${scrolled ? 'bg-background-dark/90 backdrop-blur-xl border-b border-slate-800/80 shadow-lg' : 'bg-transparent'}`}
       >
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-6 h-12 flex items-center justify-between">
           {/* Logo */}
           <div className="flex items-center gap-2.5">
             <div className="bg-primary/20 p-1.5 rounded-lg">
@@ -607,7 +607,7 @@ const LandingPage = () => {
       </header>
 
       {/* ── Hero ───────────────────────────────────────────────────────────── */}
-      <section className="relative pt-32 pb-24 px-6 overflow-hidden">
+      <section className="relative pt-20 pb-10 px-6 overflow-hidden">
         {/* Glow orbs */}
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-3xl pointer-events-none" />
         <div className="absolute top-1/3 left-1/4 w-72 h-72 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
@@ -626,7 +626,7 @@ const LandingPage = () => {
             Open Source · Anti-Detection Browser
           </div>
 
-          <h1 className="text-5xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-white leading-none mb-6">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-white leading-none mb-4">
             Browse Without&nbsp;
             <span className="relative">
               <span className="text-primary">Being Tracked</span>
@@ -636,7 +636,7 @@ const LandingPage = () => {
             </span>
           </h1>
 
-          <p className="text-base sm:text-lg text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed">
+          <p className="text-sm text-slate-400 max-w-2xl mx-auto mb-6 leading-relaxed">
             HL-MCK is a free antidetect browser for Windows that lets you manage hundreds of isolated browser
             profiles — each with a unique fingerprint, proxy, and automation stack — all from one clean dashboard.
           </p>
@@ -645,38 +645,38 @@ const LandingPage = () => {
             <a
               href="#download"
               onClick={(e) => scrollTo(e, '#download')}
-              className="flex items-center gap-2.5 px-7 py-3.5 rounded-xl bg-primary text-background-dark
-                font-bold text-base hover:bg-primary/90 transition-all duration-200
-                shadow-2xl shadow-primary/30 hover:shadow-primary/50 hover:-translate-y-0.5"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-background-dark
+                font-bold text-sm hover:bg-primary/90 transition-all duration-200
+                shadow-xl shadow-primary/30 hover:shadow-primary/50 hover:-translate-y-0.5"
             >
-              <span className="material-symbols-outlined text-xl">download</span>
+              <span className="material-symbols-outlined text-base">download</span>
               Download for Windows
             </a>
             {isAuthenticated && user?.role === 'admin' ? (
               <Link
                 to="/dashboard"
-                className="flex items-center gap-2 px-7 py-3.5 rounded-xl border border-slate-700
-                  text-slate-300 font-semibold text-base hover:border-primary/50 hover:text-primary
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-slate-700
+                  text-slate-300 font-semibold text-sm hover:border-primary/50 hover:text-primary
                   transition-all duration-200"
               >
                 Open Dashboard
-                <span className="material-symbols-outlined text-xl">arrow_forward</span>
+                <span className="material-symbols-outlined text-base">arrow_forward</span>
               </Link>
             ) : !isAuthenticated ? (
               <Link
                 to="/login"
-                className="flex items-center gap-2 px-7 py-3.5 rounded-xl border border-slate-700
-                  text-slate-300 font-semibold text-base hover:border-primary/50 hover:text-primary
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-slate-700
+                  text-slate-300 font-semibold text-sm hover:border-primary/50 hover:text-primary
                   transition-all duration-200"
               >
                 Sign In
-                <span className="material-symbols-outlined text-xl">arrow_forward</span>
+                <span className="material-symbols-outlined text-base">arrow_forward</span>
               </Link>
             ) : null}
           </div>
 
           {/* Trust badges */}
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-6 text-xs text-slate-500">
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-4 text-xs text-slate-500">
             {['Free & Open Source', 'No Account Required', 'Windows 10/11', 'Offline Capable'].map((t) => (
               <div key={t} className="flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-primary text-base">check_circle</span>
@@ -689,7 +689,7 @@ const LandingPage = () => {
       </section>
 
       {/* ── Stats ──────────────────────────────────────────────────────────── */}
-      <section className="py-16 px-6 border-y border-slate-800/60 bg-slate-900/40">
+      <section className="py-8 px-6 border-y border-slate-800/60 bg-slate-900/40">
         <div
           ref={statsRef}
           className="max-w-4xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8"
@@ -701,11 +701,11 @@ const LandingPage = () => {
       </section>
 
       {/* ── Features ───────────────────────────────────────────────────────── */}
-      <section id="features" className="py-24 px-6">
+      <section id="features" className="py-12 px-6">
         <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-16">
-            <p className="text-xs text-primary font-bold uppercase tracking-widest mb-3">Everything you need</p>
-            <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+          <div className="text-center mb-8">
+            <p className="text-xs text-primary font-bold uppercase tracking-widest mb-2">Everything you need</p>
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               Built for professionals who care about privacy
             </h2>
             <p className="mt-4 text-slate-400 max-w-xl mx-auto text-sm leading-relaxed">
@@ -722,11 +722,11 @@ const LandingPage = () => {
       </section>
 
       {/* ── How It Works ───────────────────────────────────────────────────── */}
-      <section id="how-it-works" className="py-24 px-6 bg-slate-900/30">
+      <section id="how-it-works" className="py-12 px-6 bg-slate-900/30">
         <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-16">
-            <p className="text-xs text-primary font-bold uppercase tracking-widest mb-3">Simple by design</p>
-            <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+          <div className="text-center mb-8">
+            <p className="text-xs text-primary font-bold uppercase tracking-widest mb-2">Simple by design</p>
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               Up and running in 3 steps
             </h2>
           </div>
@@ -740,11 +740,11 @@ const LandingPage = () => {
         </div>
       </section>
       {/* ── Pricing ────────────────────────────────────────────────────────────── */}
-      <section id="pricing" className="py-24 px-6">
+      <section id="pricing" className="py-12 px-6">
         <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-16">
-            <p className="text-xs text-primary font-bold uppercase tracking-widest mb-3">Simple pricing</p>
-            <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+          <div className="text-center mb-8">
+            <p className="text-xs text-primary font-bold uppercase tracking-widest mb-2">Simple pricing</p>
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               Choose the plan that fits your needs
             </h2>
             <p className="mt-4 text-slate-400 max-w-xl mx-auto text-sm leading-relaxed">
@@ -775,10 +775,10 @@ const LandingPage = () => {
         </div>
       </section>
       {/* ── Download ───────────────────────────────────────────────────────── */}
-      <section id="download" className="py-24 px-6">
+      <section id="download" className="py-12 px-6">
         <div className="max-w-3xl mx-auto">
           {/* Card */}
-          <div className="relative rounded-2xl border border-primary/20 bg-gradient-to-br from-slate-800/80 via-slate-800/60 to-primary/5 p-10 text-center overflow-hidden">
+          <div className="relative rounded-2xl border border-primary/20 bg-gradient-to-br from-slate-800/80 via-slate-800/60 to-primary/5 p-6 text-center overflow-hidden">
             {/* Glow */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="w-72 h-72 rounded-full bg-primary/10 blur-3xl" />
@@ -789,11 +789,11 @@ const LandingPage = () => {
                 <span className="material-symbols-outlined text-primary text-4xl">download</span>
               </div>
 
-              <h2 className="text-3xl font-extrabold text-white mb-3 tracking-tight">
+              <h2 className="text-xl font-extrabold text-white mb-2 tracking-tight">
                 Download HL-MCK
               </h2>
-              <p className="text-slate-400 text-sm mb-2">Latest stable release · Windows 10/11 · 64-bit</p>
-              <p className="text-slate-500 text-xs mb-8">Free &amp; open source — no account, no telemetry.</p>
+              <p className="text-slate-400 text-sm mb-1">Latest stable release · Windows 10/11 · 64-bit</p>
+              <p className="text-slate-500 text-xs mb-5">Free &amp; open source — no account, no telemetry.</p>
 
               {/* Platform buttons */}
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
@@ -897,7 +897,7 @@ const LandingPage = () => {
       />
 
       {/* ── Footer ─────────────────────────────────────────────────────────── */}
-      <footer className="border-t border-slate-800/60 py-10 px-6">
+      <footer className="border-t border-slate-800/60 py-6 px-6">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
             <div className="bg-primary/20 p-1.5 rounded-lg">
