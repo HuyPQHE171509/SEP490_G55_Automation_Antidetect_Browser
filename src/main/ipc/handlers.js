@@ -48,29 +48,70 @@ const macroRunState = new Map(); // profileId → { cancelled: boolean } — h�
 
 async function injectMacroRecorderScript(page) {
   await page.evaluate(() => {
+    // ── getCssSelector: tạo selector ổn định, ưu tiên các attribute bền vững ──
+    // Thứ tự ưu tiên: id → data-testid → leo lên ancestor button/a → jsname → name → aria-label → class
     function getCssSelector(el) {
       try {
         if (el.id) return '#' + CSS.escape(el.id);
         const dt = el.getAttribute && el.getAttribute('data-testid');
         if (dt) return '[data-testid="' + dt.replace(/"/g, '\\"') + '"]';
-        const tag = el.tagName.toLowerCase();
-        if (el.classList && el.classList.length > 0) {
-          const cls = Array.from(el.classList).slice(0, 3)
-            .map(c => { try { return '.' + CSS.escape(c); } catch { return ''; } }).join('');
-          return tag + cls;
+
+        // Bug #1 fix: Nếu element là leaf (span/i/svg/path/div/em/b) bên trong button/a,
+        // leo lên ancestor gần nhất là button/a/[role=button] để lấy selector của nút đó.
+        // Tránh ghi selector kiểu 'span.VfPpkd-vQzf8d' không ổn định.
+        var LEAF_TAGS = { span: 1, i: 1, svg: 1, path: 1, em: 1, strong: 1, b: 1, small: 1, img: 1, div: 1 };
+        var tag = el.tagName.toLowerCase();
+        if (LEAF_TAGS[tag]) {
+          var anc = el.parentElement;
+          while (anc && anc !== document.documentElement) {
+            var ancTag = anc.tagName.toLowerCase();
+            if (ancTag === 'button' || ancTag === 'a' || ancTag === 'label' ||
+                (anc.getAttribute && anc.getAttribute('role') === 'button')) {
+              el = anc;
+              if (el.id) return '#' + CSS.escape(el.id);
+              break;
+            }
+            anc = anc.parentElement;
+          }
         }
-        const parts = [];
-        let cur = el;
+        var finalTag = el.tagName.toLowerCase();
+
+        // 1. type="password" (đặc thù và cực kỳ an toàn cho password field)
+        if (finalTag === 'input' && el.getAttribute && el.getAttribute('type') === 'password') {
+          return 'input[type="password"]';
+        }
+
+        // 2. Ưu tiên name — ổn định với form elements (ngăn chặn trùng lặp jsname)
+        var nm = el.getAttribute && el.getAttribute('name');
+        if (nm) return finalTag + '[name="' + nm.replace(/"/g, '\\"') + '"]';
+
+        // 3. Ưu tiên jsname — Google dùng cho automation, ổn định hơn class
+        var jn = el.getAttribute && el.getAttribute('jsname');
+        if (jn) return finalTag + '[jsname="' + jn + '"]';
+
+        // 4. Ưu tiên aria-label — accessible label, ít thay đổi hơn class
+        var al = el.getAttribute && el.getAttribute('aria-label');
+        if (al && al.length < 80) return finalTag + '[aria-label="' + al.replace(/"/g, '\\"') + '"]';
+
+        // Fallback class-based (giới hạn 3 class đầu)
+        if (el.classList && el.classList.length > 0) {
+          var cls = Array.from(el.classList).slice(0, 3)
+            .map(function(c) { try { return '.' + CSS.escape(c); } catch { return ''; } }).join('');
+          return finalTag + cls;
+        }
+        // Structural fallback
+        var parts = [];
+        var cur = el;
         while (cur && cur.nodeType === 1 && cur !== document.documentElement) {
           if (cur.id) { parts.unshift('#' + CSS.escape(cur.id)); break; }
-          let sel = cur.nodeName.toLowerCase();
-          let nth = 1, sib = cur.previousElementSibling;
+          var sel = cur.nodeName.toLowerCase();
+          var nth = 1, sib = cur.previousElementSibling;
           while (sib) { nth++; sib = sib.previousElementSibling; }
           if (nth > 1) sel += ':nth-child(' + nth + ')';
           parts.unshift(sel);
           cur = cur.parentElement;
         }
-        return parts.join(' > ') || tag;
+        return parts.join(' > ') || finalTag;
       } catch { return el.tagName ? el.tagName.toLowerCase() : 'unknown'; }
     }
     if (window.__obt_rec_click) { document.removeEventListener('click', window.__obt_rec_click, true); window.__obt_rec_click = null; }
@@ -971,18 +1012,20 @@ function registerIpcHandlers(extra = {}) {
       const macro = result.macro;
       const { runningProfiles } = require('../state/runtime');
       if (!runningProfiles.has(profileId)) return { success: false, error: 'Profile is not running' };
-      // Bug #3 fix: đăng ký cờ hủy cho profile này
       const runState = { cancelled: false };
       macroRunState.set(profileId, runState);
+      // Helper: lấy page hiện tại của profile
+      const getPage = () => {
+        const rp = runningProfiles.get(profileId);
+        return (rp?.context?.pages() || []).find(p => !p.isClosed?.()) || null;
+      };
+      // Helper: chuẩn hoá URL để so sánh bỏ qua query/fragment
+      const urlBase = u => { try { const p = new URL(u); return p.origin + p.pathname; } catch { return u; } };
       try {
         for (let i = 0; i < macro.steps.length; i++) {
-          // Kiểm tra cờ hủy trước mỗi step — cho phép dừng ngay lập tức
-          if (runState.cancelled) {
-            return { success: false, error: 'Macro stopped by user', stopped: true };
-          }
+          if (runState.cancelled) return { success: false, error: 'Macro stopped by user', stopped: true };
           const step = macro.steps[i];
           if (step.delay && step.delay > 0) {
-            // Chờ delay nhưng vẫn kiểm tra huỷ mỗi 100ms thay vì block hết delay
             const deadline = Date.now() + step.delay;
             while (Date.now() < deadline) {
               if (runState.cancelled) return { success: false, error: 'Macro stopped by user', stopped: true };
@@ -990,10 +1033,90 @@ function registerIpcHandlers(extra = {}) {
             }
           }
           if (runState.cancelled) return { success: false, error: 'Macro stopped by user', stopped: true };
+
+          // Ghi URL TRƯỚC khi thực thi step — dùng để phát hiện navigation sau click
+          const nextStep = macro.steps[i + 1];
+          const isClickWithNavNext = (step.type === 'click.element' || step.type === 'element.dblclick')
+            && nextStep && nextStep.type === 'nav.goto';
+          const pageBeforeAction = isClickWithNavNext ? getPage() : null;
+          const urlBeforeAction = pageBeforeAction ? pageBeforeAction.url() : null;
+
+          // Thực thi step và LOG kết quả (trước đây kết quả bị nuốt im lặng)
+          let actionResult;
           try {
-            await performAction(profileId, step.type, step.params || {});
+            actionResult = await performAction(profileId, step.type, step.params || {});
           } catch (e) {
             return { success: false, error: `Step ${i + 1} "${step.label || step.type}" failed: ${e?.message || e}`, stepIndex: i };
+          }
+          // Log nếu action trả về lỗi (performAction không throw, chỉ return {success:false})
+          if (actionResult && !actionResult.success) {
+            appendLog(profileId, `Macro: step ${i + 1} "${step.label || step.type}" returned error: ${actionResult.error || 'unknown'}`);
+          }
+
+          // Bug #3 fix (v5): Sau click.element có nav.goto tiếp theo
+          if (isClickWithNavNext) {
+            const page = getPage();
+            const recordedUrl = nextStep.params?.url;
+            let navigationSucceeded = false;
+            appendLog(profileId, `Macro: click done, checking navigation to password/next page...`);
+            if (page) {
+              try {
+                let waitPattern;
+                if (recordedUrl) {
+                  const u = new URL(recordedUrl);
+                  waitPattern = u.origin + u.pathname + '**';
+                }
+                if (waitPattern) {
+                  await page.waitForURL(waitPattern, { timeout: 10000, waitUntil: 'networkidle' });
+                } else {
+                  const prevUrl = urlBeforeAction;
+                  await page.waitForURL(u => u.toString() !== prevUrl, { timeout: 10000, waitUntil: 'networkidle' });
+                }
+                navigationSucceeded = true;
+                appendLog(profileId, `Macro: navigation complete → ${page.url()}`);
+              } catch {
+                appendLog(profileId, `Macro: click did not navigate. Trying Enter key as fallback...`);
+              }
+
+              // FALLBACK 1: Nếu click không navigate, nhấn Enter để submit form.
+              // Chỉ nhấn Enter khi tiêu điểm nằm ở một trường nhập liệu (:visible input), 
+              // tránh nhấn Enter khi đang focus vào link như "Forgot email?".
+              if (!navigationSucceeded) {
+                try {
+                  const activeInput = page.locator('input:visible').first();
+                  if (await activeInput.count() > 0) {
+                    await activeInput.focus();
+                    await page.keyboard.press('Enter');
+                    appendLog(profileId, `Macro: Enter key pressed on active input field`);
+                    // Chờ navigation sau Enter
+                    let waitPattern2;
+                    if (recordedUrl) {
+                      const u = new URL(recordedUrl);
+                      waitPattern2 = u.origin + u.pathname + '**';
+                    }
+                    if (waitPattern2) {
+                      await page.waitForURL(waitPattern2, { timeout: 15000, waitUntil: 'networkidle' });
+                    } else {
+                      const prevUrl = urlBeforeAction;
+                      await page.waitForURL(u => u.toString() !== prevUrl, { timeout: 15000, waitUntil: 'networkidle' });
+                    }
+                    navigationSucceeded = true;
+                    appendLog(profileId, `Macro: Enter key worked! Navigated → ${page.url()}`);
+                  } else {
+                    appendLog(profileId, `Macro: No visible input field found to press Enter`);
+                  }
+                } catch {
+                  appendLog(profileId, `Macro: Enter key fallback did not navigate. URL still: ${page?.url()}`);
+                }
+              }
+            }
+            if (navigationSucceeded) {
+              i++; // navigation thành công → bỏ qua nav.goto
+            } else {
+              // Cả click lẫn Enter đều thất bại → thực thi nav.goto làm fallback cuối
+              appendLog(profileId, `Macro: executing nav.goto as last resort fallback`);
+              // KHÔNG increment i → loop sẽ thực thi nav.goto ở vòng tiếp
+            }
           }
         }
         return { success: true };
@@ -1039,22 +1162,150 @@ function registerIpcHandlers(extra = {}) {
         } catch {}
       };
 
-      const loadHandler = async () => { try { await injectMacroRecorderScript(page); } catch {} };
+      // Bug #4 deep fix: dùng addInitScript thay vì page.on('load') để đảm bảo
+      // listener luôn được re-inject TRƯỚC mọi script của trang mới sau navigation.
+      // page.on('load') + page.evaluate() không đáng tin cậy vì có thể bị race condition
+      // với Playwright re-injecting exposeFunction bindings trên cross-origin navigation.
+      // addInitScript chạy trước tất cả script của trang => __obt_macro_rec luôn sẵn sàng.
+      await page.addInitScript(() => {
+        // Dọn listener cũ (dành cho SPA navigation — window context không reset)
+        if (window.__obt_rec_click)   { document.removeEventListener('click',   window.__obt_rec_click,   true); }
+        if (window.__obt_rec_change)  { document.removeEventListener('change',  window.__obt_rec_change,  true); }
+        if (window.__obt_rec_keydown) { document.removeEventListener('keydown', window.__obt_rec_keydown, true); }
+        if (window.__obt_rec_scroll)  { document.removeEventListener('scroll',  window.__obt_rec_scroll,  true); clearTimeout(window.__obt_scroll_timer); }
+
+        // Bug #1 fix: getCssSel — leo lên ancestor button/a, ưu tiên jsname/name/aria-label
+        function getCssSel(el) {
+          try {
+            if (el.id) return '#' + CSS.escape(el.id);
+            const dt = el.getAttribute && el.getAttribute('data-testid');
+            if (dt) return '[data-testid="' + dt.replace(/"/g, '\\"') + '"]';
+
+            // Nếu click vào leaf element bên trong button/a, leo lên button/a
+            const LEAF = { span: 1, i: 1, svg: 1, path: 1, em: 1, strong: 1, b: 1, small: 1, img: 1, div: 1 };
+            const tag = el.tagName.toLowerCase();
+            if (LEAF[tag]) {
+              let anc = el.parentElement;
+              while (anc && anc !== document.documentElement) {
+                const at = anc.tagName.toLowerCase();
+                if (at === 'button' || at === 'a' || at === 'label' ||
+                    (anc.getAttribute && anc.getAttribute('role') === 'button')) {
+                  el = anc;
+                  if (el.id) return '#' + CSS.escape(el.id);
+                  break;
+                }
+                anc = anc.parentElement;
+              }
+            }
+            const finalTag = el.tagName.toLowerCase();
+
+            // 1. type="password" (đặc thù và cực kỳ an toàn cho password field)
+            if (finalTag === 'input' && el.getAttribute && el.getAttribute('type') === 'password') {
+              return 'input[type="password"]';
+            }
+
+            // 2. name attribute (form elements)
+            const nm = el.getAttribute && el.getAttribute('name');
+            if (nm) return finalTag + '[name="' + nm.replace(/"/g, '\\"') + '"]';
+
+            // 3. jsname (Google automation attribute)
+            const jn = el.getAttribute && el.getAttribute('jsname');
+            if (jn) return finalTag + '[jsname="' + jn + '"]';
+
+            // 4. aria-label
+            const al = el.getAttribute && el.getAttribute('aria-label');
+            if (al && al.length < 80) return finalTag + '[aria-label="' + al.replace(/"/g, '\\"') + '"]';
+
+            // class-based fallback
+            if (el.classList && el.classList.length > 0) {
+              const cls = Array.from(el.classList).slice(0, 3)
+                .map(c => { try { return '.' + CSS.escape(c); } catch { return ''; } }).join('');
+              return finalTag + cls;
+            }
+            // structural fallback
+            const parts = []; let cur = el;
+            while (cur && cur.nodeType === 1 && cur !== document.documentElement) {
+              if (cur.id) { parts.unshift('#' + CSS.escape(cur.id)); break; }
+              let sel = cur.nodeName.toLowerCase();
+              let nth = 1, sib = cur.previousElementSibling;
+              while (sib) { nth++; sib = sib.previousElementSibling; }
+              if (nth > 1) sel += ':nth-child(' + nth + ')';
+              parts.unshift(sel); cur = cur.parentElement;
+            }
+            return parts.join(' > ') || finalTag;
+          } catch { return el.tagName ? el.tagName.toLowerCase() : 'unknown'; }
+        }
+
+        // Click listener — kiểm tra __obt_macro_rec tại thời điểm event (lazy)
+        window.__obt_rec_click = function(e) {
+          try {
+            if (typeof window.__obt_macro_rec !== 'function') return;
+            const el = e.target;
+            if (!el || !el.tagName) return;
+            const tag = el.tagName.toLowerCase();
+            if (['select', 'option'].includes(tag)) return;
+            if (['input', 'textarea'].includes(tag)) {
+              const t = (el.getAttribute('type') || 'text').toLowerCase();
+              if (!['submit', 'button', 'checkbox', 'radio', 'image'].includes(t)) return;
+            }
+            window.__obt_macro_rec({ type: 'click.element', params: { selector: getCssSel(el) },
+              label: (el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '').trim().slice(0, 60), delay: 0 });
+          } catch {}
+        };
+
+        // Change listener (input/textarea/select)
+        window.__obt_rec_change = function(e) {
+          try {
+            if (typeof window.__obt_macro_rec !== 'function') return;
+            const el = e.target;
+            if (!el || !['input', 'textarea', 'select'].includes(el.tagName.toLowerCase())) return;
+            window.__obt_macro_rec({ type: 'input.fill', params: { selector: getCssSel(el), value: el.value || '' },
+              label: (el.placeholder || el.name || el.getAttribute('aria-label') || '').trim().slice(0, 60), delay: 0 });
+          } catch {}
+        };
+
+        // Keydown listener
+        const SKEYS = new Set(['Enter','Tab','Escape','F1','F2','F3','F4','F5','F12','Backspace','Delete',
+          'ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End','PageUp','PageDown']);
+        window.__obt_rec_keydown = function(e) {
+          try {
+            if (typeof window.__obt_macro_rec !== 'function') return;
+            if (SKEYS.has(e.key)) window.__obt_macro_rec({ type: 'keyboard.pressKey', params: { key: e.key }, label: 'Press ' + e.key, delay: 0 });
+          } catch {}
+        };
+
+        // Scroll listener với debounce 400ms
+        window.__obt_scroll_timer = null;
+        window.__obt_rec_scroll = function() {
+          clearTimeout(window.__obt_scroll_timer);
+          window.__obt_scroll_timer = setTimeout(function() {
+            try {
+              if (typeof window.__obt_macro_rec !== 'function') return;
+              var sx = Math.round(window.scrollX), sy = Math.round(window.scrollY);
+              window.__obt_macro_rec({ type: 'page.scroll', params: { x: sx, y: sy },
+                label: 'Scroll to (' + sx + ', ' + sy + ')', delay: 300 });
+            } catch {}
+          }, 400);
+        };
+
+        document.addEventListener('click',   window.__obt_rec_click,   true);
+        document.addEventListener('change',  window.__obt_rec_change,  true);
+        document.addEventListener('keydown', window.__obt_rec_keydown, true);
+        document.addEventListener('scroll',  window.__obt_rec_scroll,  true);
+      });
 
       page.on('framenavigated', navHandler);
-      page.on('load', loadHandler);
+      // Inject vào trang HIỆN TẠI (addInitScript chỉ chạy trên navigation tiếp theo)
       await injectMacroRecorderScript(page);
 
       macroRecorders.set(profileId, {
         cleanup: () => {
           try { page.off('framenavigated', navHandler); } catch {}
-          try { page.off('load', loadHandler); } catch {}
           page.evaluate(() => {
-            if (window.__obt_rec_click) { document.removeEventListener('click', window.__obt_rec_click, true); window.__obt_rec_click = null; }
-            if (window.__obt_rec_change) { document.removeEventListener('change', window.__obt_rec_change, true); window.__obt_rec_change = null; }
+            if (window.__obt_rec_click)   { document.removeEventListener('click',   window.__obt_rec_click,   true); window.__obt_rec_click   = null; }
+            if (window.__obt_rec_change)  { document.removeEventListener('change',  window.__obt_rec_change,  true); window.__obt_rec_change  = null; }
             if (window.__obt_rec_keydown) { document.removeEventListener('keydown', window.__obt_rec_keydown, true); window.__obt_rec_keydown = null; }
-            // Bug #2 fix: dọn scroll listener khi dừng ghi
-            if (window.__obt_rec_scroll) { document.removeEventListener('scroll', window.__obt_rec_scroll, true); clearTimeout(window.__obt_scroll_timer); window.__obt_rec_scroll = null; window.__obt_scroll_timer = null; }
+            if (window.__obt_rec_scroll)  { document.removeEventListener('scroll',  window.__obt_rec_scroll,  true); clearTimeout(window.__obt_scroll_timer); window.__obt_rec_scroll = null; window.__obt_scroll_timer = null; }
           }).catch(() => {});
           macroRecorders.delete(profileId);
         },

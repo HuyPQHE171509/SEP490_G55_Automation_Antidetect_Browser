@@ -187,9 +187,18 @@ async function clickOnElement(profileId, { selector, button = 'left', clickCount
   const { success, error, page, cleanup } = await withPage(profileId, {});
   if (!success) return err(error);
   try {
+    // Giải quyết selector hiển thị để tránh click vào các phần tử ẩn
+    let target = selector;
+    if (!selector.includes(':visible') && !selector.startsWith('xpath=') && !selector.startsWith('//')) {
+      try {
+        if (await page.locator(`${selector}:visible`).count() > 0) {
+          target = `${selector}:visible`;
+        }
+      } catch {}
+    }
     // `position` cho phép click lệch khỏi tâm element (ví dụ: { x: 5, y: 10 })
-    await page.click(selector, { button, clickCount, timeout, position });
-    appendLog(profileId, `Action: clickOnElement ${selector}`);
+    await page.click(target, { button, clickCount, timeout, position });
+    appendLog(profileId, `Action: clickOnElement ${target}`);
     await cleanup();
     return ok();
   } catch (e) { await cleanup(); return err(e?.message || e); }
@@ -403,13 +412,54 @@ async function dragAndDrop(profileId, { from, to, steps = 10, timeout = 10000 } 
   try { await page.dragAndDrop(from, to, { sourcePosition: undefined, targetPosition: undefined, force: false, timeout }); await cleanup(); appendLog(profileId, `Action: dragAndDrop ${from} -> ${to}`); return ok(); } catch (e) { await cleanup(); return err(e?.message || e); }
 }
 
-// Điền giá trị vào input/textarea bằng page.fill() — xóa nội dung cũ và gán giá trị mới ngay lập tức.
-// Khác với typeInto (gõ từng ký tự), fill() không kích hoạt keyboard events — phù hợp điền nhanh.
+// Điền giá trị vào input/textarea — Bug #2 fix v6.
+//
+// Chuỗi lỗi đã xảy ra ở các phiên bản trước:
+//   v1: page.fill() → bypass React synthetic events → form không validate
+//   v2-v3: keyboard.type() → thiếu blur → Google không enable Next button
+//   v4: dispatchEvent('blur') → untrusted event → Google's JS bỏ qua
+//   v5: Tab key (trusted blur) → gây focus nhầm vào "Forgot email?" -> Enter fallback kích hoạt nhầm recovery.
+//
+// Fix v6: Ưu tiên selector hiển thị (:visible). Dùng page.locator(target).blur() để có trusted blur native của Playwright
+// mà không cần di chuyển focus bằng phím Tab (giúp giữ nguyên tiêu điểm an toàn).
 async function fillInput(profileId, { selector, value, timeout = 10000 } = {}) {
   if (!selector) return err('selector is required');
   const { success, error, page, cleanup } = await withPage(profileId, {});
   if (!success) return err(error);
-  try { await page.fill(selector, String(value ?? '')); await cleanup(); appendLog(profileId, `Action: fill ${selector}`); return ok(); } catch (e) { await cleanup(); return err(e?.message || e); }
+  try {
+    const val = String(value ?? '');
+
+    // Giải quyết selector hiển thị để tránh các trường ẩn trùng lặp (ví dụ: Google email field ẩn)
+    let target = selector;
+    if (!selector.includes(':visible') && !selector.startsWith('xpath=') && !selector.startsWith('//')) {
+      try {
+        if (await page.locator(`${selector}:visible`).count() > 0) {
+          target = `${selector}:visible`;
+        }
+      } catch {}
+    }
+
+    // 1. Click để focus vào field
+    await page.click(target, { timeout });
+    // 2. Chọn tất cả text hiện có
+    await page.keyboard.press('Control+A');
+    // 3. Xóa text đã chọn
+    await page.keyboard.press('Delete');
+    // 4. Gõ từng ký tự — fire đầy đủ keydown/keypress/input/keyup events
+    if (val.length > 0) {
+      await page.keyboard.type(val, { delay: 30 });
+    }
+    // 5. Blur native bằng Playwright locator.blur() — tạo trusted blur event.
+    //    Không dùng Tab key nữa để tránh nhảy focus sang "Forgot email?".
+    try {
+      await page.locator(target).blur();
+    } catch {}
+    // 6. Đợi 800ms cho Google's async validation hoàn tất
+    await new Promise(r => setTimeout(r, 800));
+    appendLog(profileId, `Action: fill ${target} = "${val.slice(0, 30)}"`);
+    await cleanup();
+    return ok();
+  } catch (e) { await cleanup(); return err(e?.message || e); }
 }
 
 // Chọn option trong thẻ <select> — `values` có thể là string, array, hoặc object { label/value/index }
