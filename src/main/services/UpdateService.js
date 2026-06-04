@@ -8,10 +8,16 @@
 const { app, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 
-// URL của web-admin backend — override qua env var khi deploy production
-const UPDATE_SERVER_URL = (process.env.UPDATE_SERVER_URL || 'http://localhost:3001').replace(/\/$/, '');
+// URL của web-admin backend — override qua env var khi deploy production.
+// Fallback trỏ thẳng domain Render để app đóng gói vẫn check update được
+// mà không cần set env trên máy người dùng (giống machineId.js).
+const UPDATE_SERVER_URL = (
+  process.env.UPDATE_SERVER_URL
+  || 'https://sep490-g55-automation-antidetect-browser.onrender.com'
+).replace(/\/$/, '');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -56,6 +62,17 @@ function broadcastToWindows(channel, payload) {
       try { win.webContents.send(channel, payload); } catch {}
     }
   } catch {}
+}
+
+/** Tính SHA256 (hex) của một file trên đĩa. */
+function sha256OfFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', (c) => hash.update(c));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -134,6 +151,26 @@ async function downloadAndInstall(release) {
     }
     doDownload(rawUrl);
   });
+
+  // ── Verify SHA256 (chống file bị thay/hỏng) ───────────────────────────────
+  if (release.sha256) {
+    broadcastToWindows('update-progress', { phase: 'verifying', progress: 1 });
+    const actual = await sha256OfFile(destPath);
+    if (actual.toLowerCase() !== String(release.sha256).toLowerCase()) {
+      fs.unlink(destPath, () => {});
+      broadcastToWindows('update-progress', { phase: 'error', error: 'checksum-mismatch' });
+      throw new Error(
+        `Checksum mismatch: expected ${release.sha256}, got ${actual}`,
+      );
+    }
+  }
+
+  // ── Chỉ hỗ trợ installer Windows (.exe / .msi) với cờ silent ──────────────
+  const ext = path.extname(destPath).toLowerCase();
+  if (ext !== '.exe' && ext !== '.msi') {
+    broadcastToWindows('update-progress', { phase: 'error', error: 'unsupported-installer' });
+    throw new Error(`Unsupported installer type: ${ext || 'unknown'} (expected .exe/.msi)`);
+  }
 
   // ── Chạy installer rồi quit ───────────────────────────────────────────────
   broadcastToWindows('update-progress', { phase: 'installing', progress: 1 });

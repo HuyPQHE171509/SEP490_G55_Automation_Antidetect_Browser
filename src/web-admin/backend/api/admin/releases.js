@@ -19,6 +19,7 @@ import multer from 'multer';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '../../.data');
 const RELEASES_FILE = join(DATA_DIR, 'releases.json');
+const CONFIG_FILE = join(DATA_DIR, 'config.json');
 const UPLOAD_DIR = join(__dirname, '../../uploads/releases');
 
 const MAX_FILE_BYTES = 500 * 1024 * 1024; // 500 MB
@@ -52,6 +53,29 @@ function loadReleases() {
 function saveReleases(list) {
   ensureDirs();
   writeFileSync(RELEASES_FILE, JSON.stringify(list, null, 2), 'utf8');
+}
+
+// Đồng bộ appVersion trong config.json sang version của release vừa upload nếu
+// nó mới hơn — để trang Landing (/api/download/info) luôn hiển version mới nhất.
+function syncAppVersion(version) {
+  try {
+    ensureDirs();
+    const config = existsSync(CONFIG_FILE)
+      ? JSON.parse(readFileSync(CONFIG_FILE, 'utf8'))
+      : {};
+    const [nMaj, nMin, nPat] = parseSemver(version);
+    const [cMaj, cMin, cPat] = parseSemver(config.appVersion || '0.0.0');
+    const isNewer =
+      nMaj > cMaj ||
+      (nMaj === cMaj && nMin > cMin) ||
+      (nMaj === cMaj && nMin === cMin && nPat > cPat);
+    if (isNewer) {
+      config.appVersion = version;
+      writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+    }
+  } catch (e) {
+    console.warn('[releases] syncAppVersion failed:', e?.message);
+  }
 }
 
 function sha256OfFile(filePath) {
@@ -146,6 +170,7 @@ export async function createRelease(req, res) {
     const all = loadReleases();
     all.push(entry);
     saveReleases(all);
+    syncAppVersion(version);
 
     console.log(`[releases] uploaded ${entry.version} (${platform}) ${entry.fileName} — ${Math.round(size / 1024 / 1024)}MB by ${entry.uploadedBy}`);
     res.status(201).json(entry);
