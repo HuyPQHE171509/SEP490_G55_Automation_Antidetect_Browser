@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 
 const NAV_ITEMS = [
   { to: '/dashboard', end: true, icon: 'bar_chart', label: 'Overview' },
-  // { to: '/dashboard/orders', icon: 'receipt_long', label: 'Orders' }, // v1.1.0
+  { to: '/dashboard/orders', icon: 'receipt_long', label: 'Orders' },
   { to: '/dashboard/licenses', icon: 'key', label: 'Licenses' },
   { to: '/dashboard/users', icon: 'group', label: 'Users' },
   { to: '/dashboard/releases', icon: 'cloud_upload', label: 'Builds' },
