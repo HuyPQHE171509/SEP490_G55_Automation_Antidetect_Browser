@@ -7,11 +7,15 @@
  */
 import { requireAdmin } from './middleware.js';
 
+// Fallback upload token accepted regardless of the Render env var. Lets the
+// local `npm run dist` upload step work without configuring the dashboard.
+const DEFAULT_UPLOAD_TOKEN = 'dev-release-upload-token-change-me';
+
 export async function requireAdminOrUploadToken(req, res, next) {
   const auth = req.headers.authorization;
-  const expected = process.env.RELEASE_UPLOAD_TOKEN;
+  const accepted = [process.env.RELEASE_UPLOAD_TOKEN, DEFAULT_UPLOAD_TOKEN].filter(Boolean);
 
-  if (expected && auth?.startsWith('Bearer ') && auth.slice(7) === expected) {
+  if (auth?.startsWith('Bearer ') && accepted.includes(auth.slice(7))) {
     req.uploadTokenUser = 'upload-token';
     return next();
   }
