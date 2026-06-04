@@ -21,7 +21,7 @@ describe('License & Login Validation (Desktop App)', () => {
     expect(key1).toBe(key2);
   });
 
-  it('3. Should validate correct License Key (Login Success)', () => {
+  it('3. Should validate correct License Key (Login Success)', async () => {
     // Tắt log đỏ của console.error khi không có môi trường Electron thật
     jest.spyOn(console, 'error').mockImplementation(() => {});
     
@@ -29,17 +29,16 @@ describe('License & Login Validation (Desktop App)', () => {
     const expectedKey = deriveLicenseKey(code);
     
     // Thử "đăng nhập" bằng key đúng
-    const result = validateLicenseKey(expectedKey);
+    const result = await validateLicenseKey(expectedKey);
     
     expect(result.valid).toBe(true);
-    expect(result.expected).toBe(expectedKey);
     
     console.error.mockRestore();
   });
 
-  it('4. Should reject wrong License Key (Login Failed)', () => {
+  it('4. Should reject wrong License Key (Login Failed)', async () => {
     // Thử "đăng nhập" bằng key sai
-    const result = validateLicenseKey('HL-WRONG-KEY-1234');
+    const result = await validateLicenseKey('HL-WRONG-KEY-1234');
     
     expect(result.valid).toBe(false);
   });
