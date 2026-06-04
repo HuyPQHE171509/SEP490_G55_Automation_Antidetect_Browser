@@ -6,6 +6,9 @@ import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
 import EulaModal, { hasAgreedToEula } from '../../components/EulaModal';
 
+// Public GitHub Releases feed — always serves the newest signed installer.
+const WINDOWS_DOWNLOAD_URL = 'https://github.com/XuanKien1/hlmck-releases/releases/latest';
+
 // ─── Download info (fetched from public API, no auth needed) ─────────────
 function useDownloadInfo() {
   const [info, setInfo] = useState({ version: '1.0.0', available: ['windows', 'portable'] });
@@ -799,7 +802,7 @@ const LandingPage = () => {
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
                 {downloadInfo.available.includes('windows') && (
                 <button
-                  onClick={() => handleDownloadClick('/api/download/windows', 'Windows Installer')}
+                  onClick={() => handleDownloadClick(WINDOWS_DOWNLOAD_URL, 'Windows Installer')}
                   className="flex items-center gap-3 px-6 py-3.5 rounded-xl bg-primary text-background-dark
                     font-bold text-sm hover:bg-primary/90 transition-all duration-200
                     shadow-xl shadow-primary/30 hover:shadow-primary/50 hover:-translate-y-0.5 w-full sm:w-auto justify-center"
