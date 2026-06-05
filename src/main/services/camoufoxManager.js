@@ -132,22 +132,26 @@ function extractZip(zipPath, destDir) {
 }
 
 async function fetchLatestRelease() {
-    const raw = await httpsGet('https://api.github.com/repos/daijro/camoufox/releases/latest');
-    const release = JSON.parse(raw);
+    const raw = await httpsGet('https://api.github.com/repos/daijro/camoufox/releases');
+    const releases = JSON.parse(raw);
 
     const platform = process.platform === 'win32' ? 'win'
         : process.platform === 'darwin' ? 'mac' : 'lin';
     const arch = process.arch === 'arm64' ? 'arm64'
         : process.arch === 'ia32' ? 'i686' : 'x86_64';
 
-    // Try exact platform+arch match first, then fallback to just platform
-    const zipAssets = release.assets.filter(a => a.name.toLowerCase().includes(platform) && a.name.endsWith('.zip'));
-    const asset = zipAssets.find(a => a.name.toLowerCase().includes(arch)) || zipAssets[0];
+    // Try to find the newest release that actually has an asset for our platform
+    for (const release of releases) {
+        if (!release.assets) continue;
+        const zipAssets = release.assets.filter(a => a.name.toLowerCase().includes(platform) && a.name.endsWith('.zip'));
+        const asset = zipAssets.find(a => a.name.toLowerCase().includes(arch)) || zipAssets[0];
 
-    if (!asset) {
-        throw new Error(`No Camoufox asset for ${process.platform}/${process.arch}. Available: ${release.assets.map(a => a.name).join(', ')}`);
+        if (asset) {
+            return { version: release.tag_name, downloadUrl: asset.browser_download_url, assetName: asset.name };
+        }
     }
-    return { version: release.tag_name, downloadUrl: asset.browser_download_url, assetName: asset.name };
+
+    throw new Error(`No Camoufox asset found for ${process.platform}/${process.arch} in recent releases.`);
 }
 
 const activeInstall = { running: false };
