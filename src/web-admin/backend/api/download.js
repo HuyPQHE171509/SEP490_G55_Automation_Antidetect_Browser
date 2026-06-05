@@ -16,14 +16,17 @@ const DATA_DIR = join(__dirname, '../.data');
 const DOWNLOADS_FILE = join(DATA_DIR, 'downloads.json');
 const CONFIG_FILE = join(DATA_DIR, 'config.json');
 
-const GITHUB_BASE = 'https://github.com/longnguyen231/SEP490_G55_Automation_Antidetect_Browser/releases/latest/download';
+const GITHUB_BASE = 'https://github.com/XuanKien1/hlmck-releases/releases/latest/download';
 
-const DEFAULT_URLS = {
-  windows: `${GITHUB_BASE}/HL-MCK.Antidetect.Browser.Setup.1.0.0.exe`,
-  portable: `${GITHUB_BASE}/HL-MCK.Antidetect.Browser.Portable.1.0.0.zip`,
-  linux: `${GITHUB_BASE}/HL-MCK.Antidetect.Browser.AppImage`,
-  macos: `${GITHUB_BASE}/HL-MCK.Antidetect.Browser.dmg`,
-};
+function getDefaultUrls(version = '1.0.1') {
+  const v = version.replace(/^v/, '');
+  return {
+    windows: `${GITHUB_BASE}/HL-MCK-Antidetect-Browser-Setup-${v}.exe`,
+    portable: `${GITHUB_BASE}/HL-MCK-Antidetect-Browser-Portable-${v}.zip`,
+    linux: `${GITHUB_BASE}/HL-MCK-Antidetect-Browser-${v}.AppImage`,
+    macos: `${GITHUB_BASE}/HL-MCK-Antidetect-Browser-${v}.dmg`,
+  };
+}
 
 function getConfig() {
   try {
@@ -55,11 +58,13 @@ export function downloadRedirect(req, res) {
   }
 
   const config = getConfig();
-  const urls = { ...DEFAULT_URLS, ...(config.downloadUrls || {}) };
+  const defaultUrls = getDefaultUrls(config.appVersion);
+  const urls = { ...defaultUrls, ...(config.downloadUrls || {}) };
   const url = urls[platform];
 
   if (!url) {
-    return res.status(404).json({ error: `Unknown platform: ${platform}. Use: ${Object.keys(DEFAULT_URLS).join(', ')}` });
+    const availableKeys = Object.keys(defaultUrls).join(', ');
+    return res.status(404).json({ error: `Unknown platform: ${platform}. Use: ${availableKeys}` });
   }
 
   // Track download
@@ -93,7 +98,8 @@ export function downloadStats(req, res) {
  */
 export function downloadInfo(req, res) {
   const config = getConfig();
-  const urls = { ...DEFAULT_URLS, ...(config.downloadUrls || {}) };
+  const defaultUrls = getDefaultUrls(config.appVersion);
+  const urls = { ...defaultUrls, ...(config.downloadUrls || {}) };
   // Only include platforms that have a non-empty URL
   const available = Object.entries(urls)
     .filter(([, v]) => v && v.trim())
