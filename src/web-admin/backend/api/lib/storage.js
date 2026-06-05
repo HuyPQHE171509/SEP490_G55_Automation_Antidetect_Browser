@@ -251,3 +251,55 @@ export async function getAllOrders() {
   const all = loadFile();
   return Object.entries(all).map(([orderCode, order]) => ({ _orderCode: orderCode, ...order }));
 }
+
+// ── Configuration storage (Firestore for production, local config.json for dev) ──
+const CONFIG_FILE = join(DATA_DIR, 'config.json');
+
+const CONFIG_DEFAULTS = {
+  proPriceVnd: parseInt(process.env.PRO_PRICE_VND || '299000', 10),
+  maintenanceMode: false,
+  maintenanceBanner: '',
+  payosWebhookUrl: process.env.PAYOS_WEBHOOK_URL || '',
+  appVersion: '1.0.0',
+  downloadUrls: {},
+};
+
+export async function getConfig() {
+  const db = await getDb();
+  if (db) {
+    try {
+      const doc = await db.collection('configs').doc('default').get();
+      if (doc.exists) {
+        return { ...CONFIG_DEFAULTS, ...doc.data() };
+      }
+    } catch (e) {
+      console.warn('[storage] Firestore getConfig failed, falling back to local file:', e.message);
+    }
+  }
+
+  try {
+    if (!existsSync(CONFIG_FILE)) return { ...CONFIG_DEFAULTS };
+    return { ...CONFIG_DEFAULTS, ...JSON.parse(readFileSync(CONFIG_FILE, 'utf8')) };
+  } catch {
+    return { ...CONFIG_DEFAULTS };
+  }
+}
+
+export async function saveConfig(data) {
+  const db = await getDb();
+  if (db) {
+    try {
+      await db.collection('configs').doc('default').set(data);
+    } catch (e) {
+      console.warn('[storage] Firestore saveConfig failed:', e.message);
+    }
+  }
+
+  try {
+    if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+    writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('[storage] Local saveConfig failed:', e.message);
+  }
+}
+
