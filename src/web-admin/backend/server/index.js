@@ -26,6 +26,14 @@ import {
   uploadMiddleware,
 } from '../api/admin/releases.js';
 import { getLatestRelease, downloadRelease } from '../api/releases.js';
+import { serveUpdateFile } from '../api/updates.js';
+import {
+  uploadUpdatesMiddleware,
+  listUpdateFiles,
+  createUpdateFiles,
+  deleteUpdateFile,
+} from '../api/admin/updates.js';
+import { listGithubReleases, publishGithubRelease } from '../api/admin/githubReleases.js';
 import statusHandler from '../api/status.js';
 
 const app = express();
@@ -56,6 +64,9 @@ app.get('/api/download/:platform', downloadRedirect);
 app.get('/api/releases/latest', getLatestRelease);
 app.get('/api/releases/:id/download', downloadRelease);
 
+// electron-updater feed (public reads; hỗ trợ Range cho delta download)
+app.get('/api/updates/:file', serveUpdateFile);
+
 // ── Admin API routes (bearer token required) ──────────────────────────────────
 app.get('/api/admin/stats', requireAdmin, adminStats);
 app.get('/api/admin/orders', requireAdmin, listOrders);
@@ -72,6 +83,15 @@ app.post('/api/admin/config', requireAdmin, adminConfig);
 app.get('/api/admin/releases', requireAdminOrUploadToken, listReleases);
 app.post('/api/admin/releases', requireAdminOrUploadToken, uploadMiddleware, createRelease);
 app.delete('/api/admin/releases/:id', requireAdminOrUploadToken, deleteRelease);
+
+// Update-feed management (latest.yml + installer + blockmap cho electron-updater)
+app.get('/api/admin/updates', requireAdminOrUploadToken, listUpdateFiles);
+app.post('/api/admin/updates', requireAdminOrUploadToken, uploadUpdatesMiddleware, createUpdateFiles);
+app.delete('/api/admin/updates/:file', requireAdminOrUploadToken, deleteUpdateFile);
+
+// GitHub Releases feed (gate B): liệt kê draft/published + phát hành draft thành latest
+app.get('/api/admin/github-releases', requireAdmin, listGithubReleases);
+app.post('/api/admin/github-releases/:id/publish', requireAdmin, publishGithubRelease);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 const server = app.listen(PORT, () => {

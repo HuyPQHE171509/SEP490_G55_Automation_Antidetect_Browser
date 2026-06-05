@@ -1,17 +1,47 @@
 /**
- * UpdateService — kiểm tra và tải bản cập nhật từ web-admin backend.
+ * UpdateService — auto-update kiểu delta + tự khởi động lại, dùng electron-updater.
  *
- * Flow:
- *   1. checkForUpdate()       → hỏi /api/releases/latest, so sánh semver
- *   2. downloadAndInstall()   → tải file .exe về temp, chạy installer, quit app
+ * Cơ chế:
+ *   - Generic provider trỏ tới web-admin backend (/api/updates), nơi phục vụ
+ *     `latest.yml` + installer `.exe` + `.exe.blockmap`.
+ *   - `.blockmap` cho phép electron-updater chỉ tải các block thay đổi (delta);
+ *     nếu không khớp/không có sẽ tự fallback sang tải full installer.
+ *   - `quitAndInstall(true, true)` tắt app → chạy installer im lặng → TỰ MỞ LẠI app.
+ *
+ * Giữ nguyên hợp đồng cũ với renderer:
+ *   - Trả về { hasUpdate, currentVersion, release }
+ *   - Phát sự kiện 'update-progress' { phase, progress }
  */
 const { app, BrowserWindow } = require('electron');
-const fs = require('fs');
-const path = require('path');
-const { spawn } = require('child_process');
+const { autoUpdater } = require('electron-updater');
 
-// URL của web-admin backend — override qua env var khi deploy production
-const UPDATE_SERVER_URL = (process.env.UPDATE_SERVER_URL || 'http://localhost:3001').replace(/\/$/, '');
+// Feed cập nhật: GitHub Releases (bền, không giới hạn dung lượng, hỗ trợ delta
+// qua HTTP Range). Có thể override bằng UPDATE_FEED_URL để trỏ feed generic khác.
+const UPDATE_FEED_URL = (process.env.UPDATE_FEED_URL || '').replace(/\/$/, '');
+const GH_OWNER = process.env.UPDATE_GH_OWNER || 'XuanKien1';
+const GH_REPO = process.env.UPDATE_GH_REPO || 'hlmck-releases';
+
+// ── Cấu hình electron-updater ───────────────────────────────────────────────
+autoUpdater.autoDownload = false;          // chỉ tải khi user bấm Cập nhật
+autoUpdater.autoInstallOnAppQuit = false;  // tự gọi quitAndInstall thủ công
+autoUpdater.allowDowngrade = false;
+autoUpdater.disableDifferentialDownload = false; // bật delta (mặc định)
+// Logger gọn để không spam console
+autoUpdater.logger = {
+  info: () => {},
+  warn: () => {},
+  debug: () => {},
+  error: (m) => console.warn('[autoUpdater]', m?.message || m),
+};
+try {
+  if (UPDATE_FEED_URL) {
+    autoUpdater.setFeedURL({ provider: 'generic', url: UPDATE_FEED_URL });
+  } else {
+    autoUpdater.setFeedURL({ provider: 'github', owner: GH_OWNER, repo: GH_REPO });
+  }
+} catch (e) {
+  console.warn('[UpdateService] setFeedURL failed:', e?.message);
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -28,34 +58,40 @@ function isNewer(remoteVer, localVer) {
   return rPat > lPat;
 }
 
-function httpGet(url, timeoutMs = 10000) {
-  return new Promise((resolve, reject) => {
-    const client = url.startsWith('https') ? require('https') : require('http');
-    const req = client.get(url, { timeout: timeoutMs }, (res) => {
-      // Follow redirects
-      if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) {
-        const location = res.headers.location;
-        if (!location) return reject(new Error('Redirect with no location'));
-        res.resume();
-        return httpGet(location, timeoutMs).then(resolve).catch(reject);
-      }
-      let data = '';
-      res.setEncoding('utf8');
-      res.on('data', (c) => { data += c; });
-      res.on('end', () => resolve({ statusCode: res.statusCode, body: data }));
-      res.on('error', reject);
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
-  });
-}
-
 function broadcastToWindows(channel, payload) {
   try {
     for (const win of BrowserWindow.getAllWindows()) {
       try { win.webContents.send(channel, payload); } catch {}
     }
   } catch {}
+}
+
+// ── Gắn event listener một lần ──────────────────────────────────────────────
+let _wired = false;
+function wireEvents() {
+  if (_wired) return;
+  _wired = true;
+
+  autoUpdater.on('download-progress', (p) => {
+    broadcastToWindows('update-progress', {
+      phase: 'downloading',
+      progress: typeof p?.percent === 'number' ? p.percent / 100 : 0,
+      transferred: p?.transferred,
+      total: p?.total,
+      bytesPerSecond: p?.bytesPerSecond,
+    });
+  });
+
+  autoUpdater.on('update-downloaded', () => {
+    broadcastToWindows('update-progress', { phase: 'downloaded', progress: 1 });
+  });
+
+  autoUpdater.on('error', (err) => {
+    broadcastToWindows('update-progress', {
+      phase: 'error',
+      error: err?.message || String(err),
+    });
+  });
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -66,16 +102,26 @@ function broadcastToWindows(channel, payload) {
  */
 async function checkForUpdate() {
   const currentVersion = app.getVersion();
+  // electron-updater chỉ chạy trong app đã đóng gói (NSIS), không chạy ở dev.
+  if (!app.isPackaged) return { hasUpdate: false, currentVersion };
+
+  wireEvents();
   try {
-    const { statusCode, body } = await httpGet(
-      `${UPDATE_SERVER_URL}/api/releases/latest?platform=windows`,
-      10000,
-    );
-    if (statusCode !== 200) return { hasUpdate: false, currentVersion };
-    const release = JSON.parse(body);
-    if (!release?.version) return { hasUpdate: false, currentVersion };
-    const hasUpdate = isNewer(release.version, currentVersion);
-    return { hasUpdate, currentVersion, release: hasUpdate ? release : undefined };
+    const result = await autoUpdater.checkForUpdates();
+    const info = result?.updateInfo;
+    if (!info?.version) return { hasUpdate: false, currentVersion };
+    const hasUpdate = isNewer(info.version, currentVersion);
+    return {
+      hasUpdate,
+      currentVersion,
+      release: hasUpdate
+        ? {
+            version: info.version,
+            notes: info.releaseNotes || '',
+            releaseDate: info.releaseDate || null,
+          }
+        : undefined,
+    };
   } catch (err) {
     console.warn('[UpdateService] checkForUpdate error:', err?.message);
     return { hasUpdate: false, currentVersion };
@@ -83,62 +129,33 @@ async function checkForUpdate() {
 }
 
 /**
- * Tải installer về thư mục temp, chạy và quit app.
- * Gửi sự kiện 'update-progress' (0–1) về renderer trong quá trình tải.
- * @param {object} release — release metadata từ /api/releases/latest
+ * Tải bản cập nhật (delta nếu có) rồi tắt app & tự mở lại sau khi cài.
+ * Phát sự kiện 'update-progress' { phase, progress } trong quá trình tải.
  */
-async function downloadAndInstall(release) {
-  const rawUrl = release.downloadUrl.startsWith('http')
-    ? release.downloadUrl
-    : `${UPDATE_SERVER_URL}${release.downloadUrl}`;
+async function downloadAndInstall() {
+  if (!app.isPackaged) throw new Error('Update chỉ khả dụng trong app đã đóng gói');
 
-  const fileName = release.fileName || `HL-MCK-Update-${release.version}.exe`;
-  const destPath = path.join(app.getPath('temp'), fileName);
-
+  wireEvents();
   broadcastToWindows('update-progress', { phase: 'downloading', progress: 0 });
 
-  // ── Download ──────────────────────────────────────────────────────────────
-  await new Promise((resolve, reject) => {
-    function doDownload(url, redirectCount = 0) {
-      if (redirectCount > 5) return reject(new Error('Too many redirects'));
-      const client = url.startsWith('https') ? require('https') : require('http');
-      client.get(url, (res) => {
-        if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) {
-          res.resume();
-          return doDownload(res.headers.location || url, redirectCount + 1);
-        }
-        if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+  // Bảo đảm có thông tin update trong bộ nhớ trước khi tải.
+  await autoUpdater.checkForUpdates();
 
-        const total = parseInt(res.headers['content-length'] || '0', 10);
-        let received = 0;
-        const file = fs.createWriteStream(destPath);
+  // Tải bản cập nhật — electron-updater tự dùng .blockmap để tải delta,
+  // nếu không khớp sẽ fallback sang tải full installer.
+  await autoUpdater.downloadUpdate();
 
-        res.on('data', (chunk) => {
-          received += chunk.length;
-          if (total > 0) {
-            broadcastToWindows('update-progress', {
-              phase: 'downloading',
-              progress: received / total,
-            });
-          }
-        });
-        res.pipe(file);
-        file.on('finish', () => {
-          file.close();
-          broadcastToWindows('update-progress', { phase: 'downloaded', progress: 1 });
-          resolve();
-        });
-        file.on('error', (e) => { fs.unlink(destPath, () => {}); reject(e); });
-        res.on('error', reject);
-      }).on('error', reject);
-    }
-    doDownload(rawUrl);
-  });
-
-  // ── Chạy installer rồi quit ───────────────────────────────────────────────
   broadcastToWindows('update-progress', { phase: 'installing', progress: 1 });
-  spawn(destPath, ['/S'], { detached: true, stdio: 'ignore' }).unref();
-  setTimeout(() => app.quit(), 500);
+
+  // quitAndInstall(isSilent=true, isForceRunAfter=true):
+  //   → tắt app, chạy installer im lặng, rồi TỰ MỞ LẠI app khi cài xong.
+  setImmediate(() => {
+    try {
+      autoUpdater.quitAndInstall(true, true);
+    } catch (e) {
+      broadcastToWindows('update-progress', { phase: 'error', error: e?.message });
+    }
+  });
 }
 
 module.exports = { checkForUpdate, downloadAndInstall };

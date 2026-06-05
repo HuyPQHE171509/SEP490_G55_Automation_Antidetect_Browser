@@ -1,6 +1,6 @@
 {
   "name": "hlmckautomationantidetectbrowser",
-  "version": "1.0.0",
+  "version": "1.0.11",
   "description": "Browser profile management with antidetect capabilities using Electron and React",
   "main": "src/main/bootstrap.js",
   "scripts": {
@@ -55,6 +55,14 @@
     "directories": {
       "output": "release"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "XuanKien1",
+        "repo": "hlmck-releases",
+        "releaseType": "draft"
+      }
+    ],
     "extraResources": [
       {
         "from": "build/1.png",
@@ -72,9 +80,6 @@
     ],
     "npmRebuild": false,
     "nodeGypRebuild": false,
-    "mac": {
-      "category": "public.app-category.developer-tools"
-    },
     "win": {
       "target": [
         {
@@ -93,9 +98,6 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "HL-MCK Antidetect Browser"
-    },
-    "linux": {
-      "target": "AppImage"
     },
     "afterPack": "./scripts/afterPack-obfuscate.js"
   },
@@ -143,6 +145,7 @@
     "cors": "^2.8.6",
     "drizzle-orm": "^0.45.0",
     "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.3",
     "express": "^5.2.1",
     "fastify": "^5.8.2",
     "fingerprint-generator": "^2.1.55",

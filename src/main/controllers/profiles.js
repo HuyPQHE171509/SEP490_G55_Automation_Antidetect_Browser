@@ -482,7 +482,28 @@ async function launchProfileInternal(profileId, options = {}) {
     // Playwright tự động nạp state này vào context để tiếp tục phiên đăng nhập từ lần trước —
     // người dùng không cần đăng nhập lại mỗi lần mở profile.
     const statePath = storageStatePath(profileId);
-    if (fs.existsSync(statePath)) { try { contextOptions.storageState = statePath; } catch { } }
+    if (fs.existsSync(statePath)) {
+      try {
+        const rawData = fs.readFileSync(statePath, 'utf8');
+        try {
+          // Attempt to parse as plain JSON first (backward compatibility for unencrypted profiles)
+          const parsed = JSON.parse(rawData);
+          contextOptions.storageState = parsed;
+        } catch (e) {
+          // If JSON parse fails, it means the file is encrypted (or corrupt)
+          const { decryptProfileStorage } = require('../services/encryption');
+          const decryptedData = decryptProfileStorage(rawData);
+          if (decryptedData) {
+            contextOptions.storageState = JSON.parse(decryptedData);
+            appendLog(profileId, 'Loaded encrypted storage state securely');
+          } else {
+            appendLog(profileId, 'Warning: Failed to decrypt storage state. Login sessions may be lost.');
+          }
+        }
+      } catch (err) {
+        appendLog(profileId, `Error loading storage state: ${err.message}`);
+      }
+    }
     // Tạo browser context mới với toàn bộ tùy chọn đã chuẩn bị.
     // Đây là bước quan trọng nhất: từ đây trở đi mọi tab/page trong context này sẽ
     // dùng UA giả, timezone giả, locale giả, cookie đã lưu, v.v.
@@ -596,8 +617,14 @@ async function launchProfileInternal(profileId, options = {}) {
         // context.storageState() trả về object chứa cookies và origins (localStorage).
         // Ghi ra file để lần sau mở profile sẽ nạp lại (contextOptions.storageState).
         const state = await context.storageState();
-        fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
-        appendLog(profileId, `Saved storage state (${(state.cookies || []).length} cookies)`);
+        
+        // Encrypt the storage state before saving to disk
+        const { encryptProfileStorage } = require('../services/encryption');
+        const jsonString = JSON.stringify(state);
+        const encryptedData = encryptProfileStorage(jsonString);
+        
+        fs.writeFileSync(statePath, encryptedData, 'utf8');
+        appendLog(profileId, `Saved encrypted storage state (${(state.cookies || []).length} cookies)`);
       } catch (e) {
         const msg = e?.message || String(e);
         // Nếu context đã đóng trước khi save xong thì bỏ qua — không phải lỗi nghiêm trọng
