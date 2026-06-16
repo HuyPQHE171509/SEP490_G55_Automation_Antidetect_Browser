@@ -45,7 +45,7 @@ function StepRow({ step, index, total, onChange, onRemove, onMoveUp, onMoveDown 
 
   return (
     <div style={{
-      background: 'var(--card, #fff)', border: '1px solid var(--border, #e5e7eb)',
+      background: 'var(--card2)', border: '1px solid var(--border)',
       borderRadius: 8, padding: '12px 14px', marginBottom: 8,
       display: 'flex', flexDirection: 'column', gap: 8,
     }}>
@@ -57,7 +57,7 @@ function StepRow({ step, index, total, onChange, onRemove, onMoveUp, onMoveDown 
         <select
           value={step.type}
           onChange={e => setType(e.target.value)}
-          style={{ flex: '0 0 auto', fontSize: 13, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border, #d1d5db)', background: 'var(--bg, #fff)', color: 'var(--fg, #111)' }}
+          style={{ flex: '0 0 auto', fontSize: 13, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--glass-input)', color: 'var(--fg)' }}
         >
           {ACTION_TYPES.map(a => (
             <option key={a.value} value={a.value}>{a.label}</option>
@@ -68,7 +68,7 @@ function StepRow({ step, index, total, onChange, onRemove, onMoveUp, onMoveDown 
           placeholder="Step label (optional)"
           value={step.label}
           onChange={e => onChange({ ...step, label: e.target.value })}
-          style={{ flex: 1, fontSize: 13, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border, #d1d5db)', background: 'var(--bg, #fff)', color: 'var(--fg, #111)' }}
+          style={{ flex: 1, fontSize: 13, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--glass-input)', color: 'var(--fg)' }}
         />
         <div style={{ display: 'flex', gap: 2 }}>
           <button onClick={onMoveUp} disabled={index === 0} title="Move up"
@@ -91,7 +91,7 @@ function StepRow({ step, index, total, onChange, onRemove, onMoveUp, onMoveDown 
                 value={step.params[pk] ?? ''}
                 onChange={e => setParam(pk, pk === 'ms' || pk === 'x' || pk === 'y' ? Number(e.target.value) : e.target.value)}
                 placeholder={PARAM_LABELS[pk] || pk}
-                style={{ fontSize: 13, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border, #d1d5db)', background: 'var(--bg, #fff)', color: 'var(--fg, #111)' }}
+                style={{ fontSize: 13, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--glass-input)', color: 'var(--fg)' }}
               />
             </div>
           ))}
@@ -108,7 +108,7 @@ function StepRow({ step, index, total, onChange, onRemove, onMoveUp, onMoveDown 
           step={100}
           value={step.delay}
           onChange={e => onChange({ ...step, delay: Math.max(0, Number(e.target.value)) })}
-          style={{ width: 90, fontSize: 13, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border, #d1d5db)', background: 'var(--bg, #fff)', color: 'var(--fg, #111)' }}
+          style={{ width: 90, fontSize: 13, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--glass-input)', color: 'var(--fg)' }}
         />
       </div>
     </div>
@@ -292,13 +292,13 @@ export default function MacroManager({ profiles = [] }) {
   const hasEditor = selectedId !== null || dirty;
 
   return (
-    <div style={{ display: 'flex', height: '100%', minHeight: 0, gap: 0, background: 'var(--bg, #f8fafc)' }}>
+    <div style={{ display: 'flex', height: '100%', minHeight: 0, gap: 0, background: 'var(--bg)' }}>
       {/* ── Left: macro list ─────────────────────────────────── */}
       <div style={{
-        width: 240, flexShrink: 0, borderRight: '1px solid var(--border, #e5e7eb)',
-        display: 'flex', flexDirection: 'column', background: 'var(--sidebar-bg, #fff)',
+        width: 240, flexShrink: 0, borderRight: '1px solid var(--border)',
+        display: 'flex', flexDirection: 'column', background: 'var(--card)',
       }}>
-        <div style={{ padding: '16px 14px 10px', borderBottom: '1px solid var(--border, #e5e7eb)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ padding: '16px 14px 10px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontWeight: 700, fontSize: 14 }}>Macros</span>
           <button
             onClick={newMacro}
@@ -338,7 +338,7 @@ export default function MacroManager({ profiles = [] }) {
         ) : (
           <>
             {/* Header */}
-            <div style={{ padding: '14px 20px 10px', borderBottom: '1px solid var(--border, #e5e7eb)', display: 'flex', alignItems: 'flex-start', gap: 12, background: 'var(--card, #fff)' }}>
+            <div style={{ padding: '14px 20px 10px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', gap: 12, background: 'var(--card)' }}>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <input
                   type="text"
@@ -410,18 +410,18 @@ export default function MacroManager({ profiles = [] }) {
               ))}
               <button
                 onClick={addStep}
-                style={{ fontSize: 13, padding: '7px 18px', borderRadius: 7, border: '1px dashed var(--border, #d1d5db)', background: 'transparent', color: 'var(--muted, #6b7280)', cursor: 'pointer', width: '100%', marginTop: 4 }}
+                style={{ fontSize: 13, padding: '7px 18px', borderRadius: 7, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', width: '100%', marginTop: 4 }}
               >+ Add Step</button>
             </div>
 
             {/* Footer: run */}
-            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border, #e5e7eb)', display: 'flex', alignItems: 'center', gap: 12, background: 'var(--card, #fff)', flexWrap: 'wrap' }}>
+            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, background: 'var(--card)', flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <label style={{ fontSize: 13, color: 'var(--muted, #6b7280)', whiteSpace: 'nowrap' }}>Run on profile:</label>
                 <select
                   value={runProfileId}
                   onChange={e => setRunProfileId(e.target.value)}
-                  style={{ fontSize: 13, padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border, #d1d5db)', background: 'var(--bg, #fff)', color: 'var(--fg, #111)' }}
+                  style={{ fontSize: 13, padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--glass-input)', color: 'var(--fg)' }}
                 >
                   {profiles.length === 0 && <option value="">No profiles</option>}
                   {profiles.map(p => (
@@ -456,7 +456,7 @@ export default function MacroManager({ profiles = [] }) {
                 >► Run</button>
               )}
 
-              <div style={{ width: 1, height: 26, background: 'var(--border, #e5e7eb)', flexShrink: 0 }} />
+              <div style={{ width: 1, height: 26, background: 'var(--border)', flexShrink: 0 }} />
 
               <button
                 onClick={isRecording ? stopRecording : startRecording}
@@ -494,17 +494,17 @@ export default function MacroManager({ profiles = [] }) {
 
       {/* Delete confirmation modal */}
       {confirmDelete && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }}
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--overlay-bg)' }}
           onClick={() => setConfirmDelete(false)}>
-          <div style={{ background: '#fff', borderRadius: 12, padding: '28px', width: 380, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}
+          <div style={{ background: 'var(--card2)', border: '1px solid var(--border2)', borderRadius: 12, padding: '28px', width: 380, boxShadow: 'var(--shadow)' }}
             onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Delete Macro</div>
-            <div style={{ fontSize: 14, color: '#6b7280', marginBottom: 20 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: 'var(--fg)' }}>Delete Macro</div>
+            <div style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 20 }}>
               "<strong>{name}</strong>" will be permanently deleted.
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
               <button onClick={() => setConfirmDelete(false)}
-                style={{ padding: '8px 20px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', color: '#374151', fontSize: 14, cursor: 'pointer' }}>
+                style={{ padding: '8px 20px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--glass)', color: 'var(--fg)', fontSize: 14, cursor: 'pointer' }}>
                 Cancel
               </button>
               <button onClick={deleteMacro}
