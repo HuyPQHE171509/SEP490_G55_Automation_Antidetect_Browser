@@ -148,6 +148,7 @@ async function launchProfileInternal(profileId, options = {}) {
     const engineMode = settings.engine || 'playwright';
     // Camoufox: trình duyệt Firefox đặc biệt, được tối ưu hóa chống phát hiện fingerprint.
     const isCamoufox = engineMode === 'camoufox';
+    const isCloakBrowser = engineMode === 'cloakbrowser';
     // isFirefox: gom tất cả các engine dựa trên Firefox (playwright-firefox, firefox, camoufox).
     const isFirefox = engineMode === 'playwright-firefox' || engineMode === 'firefox' || isCamoufox;
     // Phải dùng 'playwright' (rebrowser-playwright đã patch), KHÔNG dùng 'playwright-core' (bản gốc chưa patch).
@@ -275,6 +276,17 @@ async function launchProfileInternal(profileId, options = {}) {
       }
       executablePath = cfExe;
       binarySource = 'camoufox';
+      appendLog(profileId, `[binary] source=${binarySource} path=${executablePath}`);
+    } else if (isCloakBrowser) {
+      const { getCloakBrowserExecutableSync } = require('../services/cloakBrowserManager');
+      const cbExe = getCloakBrowserExecutableSync();
+      if (!cbExe) {
+        appendLog(profileId, 'CloakBrowser executable not found. Please install it first.');
+        if (forwarder) { try { await forwarder.stop(); } catch {} }
+        return { success: false, error: 'CloakBrowser not installed' };
+      }
+      executablePath = cbExe;
+      binarySource = 'cloakbrowser';
       appendLog(profileId, `[binary] source=${binarySource} path=${executablePath}`);
     } else if (!isFirefox) {
       const vendorPath = resolveVendorChromePath();

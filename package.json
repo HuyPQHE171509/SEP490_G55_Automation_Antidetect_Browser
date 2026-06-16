@@ -141,6 +141,7 @@
     "@sentry/electron": "^7.10.0",
     "better-sqlite3": "^12.0.0",
     "bootstrap": "^5.3.8",
+    "cloakbrowser": "^0.3.31",
     "commander": "^12.1.0",
     "cors": "^2.8.6",
     "drizzle-orm": "^0.45.0",

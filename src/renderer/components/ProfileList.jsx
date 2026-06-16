@@ -282,6 +282,7 @@ export default function ProfileList({
         if (engineFilter === 'chromium') return eng === 'playwright';
         if (engineFilter === 'firefox') return eng === 'playwright-firefox' || eng === 'firefox';
         if (engineFilter === 'camoufox') return eng === 'camoufox';
+        if (engineFilter === 'cloakbrowser') return eng === 'cloakbrowser';
         return true;
       });
     }
@@ -393,6 +394,7 @@ export default function ProfileList({
             <option value="chromium">Chromium</option>
             <option value="firefox">Firefox</option>
             <option value="camoufox">Camoufox</option>
+            <option value="cloakbrowser">CloakBrowser</option>
           </select>
           <select className="pl-filter-select" value={sortBy} onChange={e => setSortBy(e.target.value)}>
             <option value="created-desc">Newest first</option>
@@ -441,7 +443,8 @@ export default function ProfileList({
             const engine = profile?.settings?.engine || 'playwright';
             const isFirefox = engine === 'playwright-firefox' || engine === 'firefox';
             const isCamoufox = engine === 'camoufox';
-            const engineLabel = isCamoufox ? 'Camoufox' : isFirefox ? 'Firefox' : 'Chromium';
+            const isCloakBrowser = engine === 'cloakbrowser';
+            const engineLabel = isCamoufox ? 'Camoufox' : isCloakBrowser ? 'CloakBrowser' : isFirefox ? 'Firefox' : 'Chromium';
             
             const hasProxy = profile?.settings?.proxy?.type && profile.settings.proxy.type !== 'none' && profile.settings.proxy.server;
             const proxyType = hasProxy ? profile.settings.proxy.type.toUpperCase() : '';
@@ -466,9 +469,9 @@ export default function ProfileList({
                 <div style={{
                   width: '30px', height: '30px', borderRadius: '7px', flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: isCamoufox ? 'rgba(168,85,247,0.85)' : isFirefox ? 'rgba(234,88,12,0.85)' : 'rgba(37,99,235,0.85)',
+                  background: isCamoufox ? 'rgba(168,85,247,0.85)' : isCloakBrowser ? 'rgba(6,182,212,0.85)' : isFirefox ? 'rgba(234,88,12,0.85)' : 'rgba(37,99,235,0.85)',
                   color: '#fff', fontWeight: 700, fontSize: '0.82rem', letterSpacing: '-0.5px',
-                  boxShadow: `0 2px 6px ${isCamoufox ? 'rgba(168,85,247,0.3)' : isFirefox ? 'rgba(234,88,12,0.3)' : 'rgba(37,99,235,0.3)'}`,
+                  boxShadow: `0 2px 6px ${isCamoufox ? 'rgba(168,85,247,0.3)' : isCloakBrowser ? 'rgba(6,182,212,0.3)' : isFirefox ? 'rgba(234,88,12,0.3)' : 'rgba(37,99,235,0.3)'}`,
                 }}>
                   P
                 </div>
@@ -513,12 +516,12 @@ export default function ProfileList({
                     <span style={{
                       display: 'inline-flex', alignItems: 'center',
                       padding: '1px 5px', borderRadius: '3px', fontSize: '0.6rem', fontWeight: 700,
-                      background: isCamoufox ? 'rgba(168,85,247,0.15)' : isFirefox ? 'rgba(234,88,12,0.15)' : 'rgba(37,99,235,0.15)',
-                      color: isCamoufox ? '#c084fc' : isFirefox ? '#fb923c' : '#60a5fa',
-                      border: `1px solid ${isCamoufox ? 'rgba(168,85,247,0.35)' : isFirefox ? 'rgba(234,88,12,0.35)' : 'rgba(37,99,235,0.35)'}`,
+                      background: isCamoufox ? 'rgba(168,85,247,0.15)' : isCloakBrowser ? 'rgba(6,182,212,0.15)' : isFirefox ? 'rgba(234,88,12,0.15)' : 'rgba(37,99,235,0.15)',
+                      color: isCamoufox ? '#c084fc' : isCloakBrowser ? '#22d3ee' : isFirefox ? '#fb923c' : '#60a5fa',
+                      border: `1px solid ${isCamoufox ? 'rgba(168,85,247,0.35)' : isCloakBrowser ? 'rgba(6,182,212,0.35)' : isFirefox ? 'rgba(234,88,12,0.35)' : 'rgba(37,99,235,0.35)'}`,
                       letterSpacing: '0.04em',
                     }}>
-                      {isCamoufox ? 'CF' : isFirefox ? 'FF' : 'CR'}
+                      {isCamoufox ? 'CF' : isCloakBrowser ? 'CB' : isFirefox ? 'FF' : 'CR'}
                     </span>
 
                     {/* OS / browser / resolution — same line as name */}
@@ -745,6 +748,7 @@ export default function ProfileList({
                   <option value="playwright">Chromium (Playwright)</option>
                   <option value="playwright-firefox">Firefox (Playwright)</option>
                   <option value="camoufox">Camoufox (Anti-detect)</option>
+                  <option value="cloakbrowser">CloakBrowser (Anti-detect)</option>
                 </select>
               </div>
               <div className="pl-modal-field">

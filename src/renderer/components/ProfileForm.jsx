@@ -272,7 +272,8 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
   const [engineStatus, setEngineStatus] = useState({
       chromium: { status: 'loading' },
       firefox: { status: 'loading' },
-      camoufox: { status: 'loading' }
+      camoufox: { status: 'loading' },
+      cloakbrowser: { status: 'loading' }
   });
   // 'chromium' | 'firefox' | 'camoufox' | null
   const [engineInstallTarget, setEngineInstallTarget] = useState(null);
@@ -284,10 +285,12 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
         const chromiumData = await window.electronAPI.checkBrowserStatus('chromium');
         const firefoxData = await window.electronAPI.checkBrowserStatus('firefox');
         const camoufoxData = await window.electronAPI.checkBrowserStatus('camoufox');
+        const cloakbrowserData = await window.electronAPI.checkBrowserStatus('cloakbrowser');
         setEngineStatus({
             chromium: chromiumData,
             firefox: firefoxData,
-            camoufox: camoufoxData
+            camoufox: camoufoxData,
+            cloakbrowser: cloakbrowserData
         });
       } catch (e) {
           console.error(e);
@@ -617,6 +620,9 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
             } else if (val === 'camoufox') {
               setFp('browser', 'Firefox');
               setFp('userAgent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0');
+            } else if (val === 'cloakbrowser') {
+              setFp('browser', 'Chrome');
+              setFp('userAgent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
             } else if (val === 'playwright') {
               setFp('browser', 'Chrome');
               setFp('userAgent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
@@ -630,6 +636,9 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
             </option>
             <option value="camoufox">
               Camoufox Firefox {engineStatus.camoufox.status !== 'installed' && engineStatus.camoufox.status !== 'loading' ? '(Not Installed)' : ''}
+            </option>
+            <option value="cloakbrowser">
+              CloakBrowser Chromium {engineStatus.cloakbrowser?.status !== 'installed' && engineStatus.cloakbrowser?.status !== 'loading' ? '(Not Installed)' : ''}
             </option>
           </select>
 
@@ -659,6 +668,14 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
             <div className="pf-engine-warn">
               <span>⚠️ Camoufox Firefox is not installed.</span>
               <button type="button" className="pf-engine-install-btn" onClick={() => setEngineInstallTarget('camoufox')}>
+                Install Now
+              </button>
+            </div>
+          )}
+          {(formData.settings.engine === 'cloakbrowser' && engineStatus.cloakbrowser?.status !== 'installed' && engineStatus.cloakbrowser?.status !== 'loading') && (
+            <div className="pf-engine-warn">
+              <span>⚠️ CloakBrowser Chromium is not installed.</span>
+              <button type="button" className="pf-engine-install-btn" onClick={() => setEngineInstallTarget('cloakbrowser')}>
                 Install Now
               </button>
             </div>

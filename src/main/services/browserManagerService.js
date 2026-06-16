@@ -38,6 +38,10 @@ async function checkBrowserStatus(browserName) {
         const camoufox = require('./camoufoxManager');
         return await camoufox.checkStatus();
     }
+    if (browserName === 'cloakbrowser') {
+        const cloakbrowser = require('./cloakBrowserManager');
+        return await cloakbrowser.checkStatus();
+    }
     try {
         const pw = require('playwright');
         const engine = browserName === 'firefox' ? pw.firefox : pw.chromium;
@@ -100,6 +104,11 @@ async function installBrowser(browserName) {
         const camoufox = require('./camoufoxManager');
         camoufox.setMainWindowRef(mainWindowRef);
         return await camoufox.install();
+    }
+    if (browserName === 'cloakbrowser') {
+        const cloakbrowser = require('./cloakBrowserManager');
+        cloakbrowser.setMainWindowRef(mainWindowRef);
+        return await cloakbrowser.install();
     }
     if (activeInstalls.has(browserName)) {
         return { success: false, error: `${browserName} is already installing.` };
@@ -187,6 +196,10 @@ async function uninstallBrowser(browserName) {
     if (browserName === 'camoufox') {
         const camoufox = require('./camoufoxManager');
         return await camoufox.uninstall();
+    }
+    if (browserName === 'cloakbrowser') {
+        const cloakbrowser = require('./cloakBrowserManager');
+        return await cloakbrowser.uninstall();
     }
     try {
         const browsersPath = getBrowsersPath();
