@@ -18,8 +18,8 @@ async function getCloakBrowserExecutableAsync() {
     process.env.CLOAKBROWSER_CACHE_DIR = getCloakBrowserDir();
     const cb = await import("cloakbrowser");
     const info = cb.binaryInfo();
-    if (info.downloaded && fs.existsSync(info.path)) {
-      return info.path;
+    if (info.installed && fs.existsSync(info.binaryPath)) {
+      return info.binaryPath;
     }
   } catch {}
   return null;
@@ -74,9 +74,9 @@ async function checkStatus() {
   try {
     const cb = await import("cloakbrowser");
     const info = cb.binaryInfo();
-    downloaded = info.downloaded;
-    if (downloaded && fs.existsSync(info.path)) {
-      exePath = info.path;
+    downloaded = info.installed;
+    if (downloaded && fs.existsSync(info.binaryPath)) {
+      exePath = info.binaryPath;
       version = info.version;
     }
   } catch (e) {

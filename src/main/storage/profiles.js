@@ -140,7 +140,7 @@ function validateProfileInputBasic(p) {
   const engine = p.settings?.engine;
   // 'cdp' is accepted here only so legacy profile data passing through validation does not error;
   // normalizeProfileInput migrates it to 'playwright'.
-  if (engine && !['playwright','playwright-firefox','cdp','auto','camoufox'].includes(engine)) errors.push('settings.engine must be playwright, playwright-firefox, camoufox, or auto');
+  if (engine && !['playwright','playwright-firefox','cdp','auto','camoufox','cloakbrowser'].includes(engine)) errors.push('settings.engine must be playwright, playwright-firefox, camoufox, cloakbrowser, or auto');
   const cpu = p.settings?.cpuCores; if (cpu != null && (!Number.isInteger(cpu) || cpu < 1 || cpu > 64)) errors.push('cpuCores must be 1-64');
   const mem = p.settings?.memoryGB; if (mem != null && (!Number.isInteger(mem) || mem < 1 || mem > 256)) errors.push('memoryGB must be 1-256');
   return errors;

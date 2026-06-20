@@ -741,6 +741,27 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
             };
           }
           const rng = mulberry32(seed); // Khởi tạo PRNG với seed của profile này
+          // Separate PRNG for WebGL noise (XOR'd seed avoids correlation with 2D canvas)
+          const rngWebGL = mulberry32(seed ^ 0xC0FFEE);
+
+          // Capture original WebGL readPixels before patching
+          const origRPWGL1 = window.WebGLRenderingContext ? WebGLRenderingContext.prototype.readPixels : null;
+          const origRPWGL2 = window.WebGL2RenderingContext ? WebGL2RenderingContext.prototype.readPixels : null;
+
+          // Noise function for raw Uint8Array pixel buffers (used by WebGL readPixels)
+          function perturbRawPixels(pixels) {
+            if (!pixels || pixels.length < 4) return;
+            const len = pixels.length;
+            const divisor = Math.max(40, 400 - (intensity - 1) * 40);
+            const step = Math.max(4, Math.floor(len / divisor) * 4);
+            for (let i = 0; i < len; i += step) {
+              for (let c = 0; c < 3; c++) { // RGB only, skip Alpha
+                const noise = rngWebGL() < 0.5 ? -1 : 1;
+                const val = pixels[i + c] + noise;
+                pixels[i + c] = val < 0 ? 0 : val > 255 ? 255 : val;
+              }
+            }
+          }
 
           // ── Noise function: intensity 1=sparse(1/400px), 10=denser(1/40px) ──
           // perturbImageData: hàm thêm nhiễu vào mảng pixel của imageData.
@@ -762,6 +783,22 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
             }
             return imageData;
           }
+
+          // Patch WebGL readPixels — intercepts direct gl.readPixels() calls to change WebGL Image Hash
+          const patchRP = (proto, orig) => {
+            if (!proto || !orig) return;
+            Object.defineProperty(proto, 'readPixels', {
+              value: function(x, y, w, h, format, type, pixels, ...rest) {
+                orig.apply(this, arguments);
+                if (pixels instanceof Uint8Array || pixels instanceof Uint8ClampedArray) {
+                  perturbRawPixels(pixels);
+                }
+              },
+              configurable: true,
+            });
+          };
+          if (window.WebGLRenderingContext) patchRP(WebGLRenderingContext.prototype, origRPWGL1);
+          if (window.WebGL2RenderingContext) patchRP(WebGL2RenderingContext.prototype, origRPWGL2 || origRPWGL1);
 
           // Use a flag to prevent recursion when toDataURL calls getImageData internally
           // _isPerturbing: cờ ngăn đệ quy vô tận.
@@ -797,10 +834,36 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
                 try {
                   const ctx = this.getContext('2d');
                   if (ctx) {
+                    // 2D canvas: read pixels, add noise, write back
                     // Đọc toàn bộ pixel canvas (gọi origGetImageData để không trigger patch lại)
                     const imgData = origGetImageData.call(ctx, 0, 0, this.width, this.height);
                     perturbImageData(imgData); // Thêm nhiễu vào pixel
                     ctx.putImageData(imgData, 0, 0); // Ghi pixel đã nhiễu trở lại canvas
+                  } else if (this.width > 0 && this.height > 0) {
+                    // WebGL canvas: getContext('2d') returns null when WebGL context exists.
+                    // Read framebuffer via origReadPixels (unpatched) → add noise → return via temp 2D canvas.
+                    try {
+                      const isWGL2 = window.WebGL2RenderingContext;
+                      const gl = (isWGL2 && this.getContext('webgl2')) || this.getContext('webgl');
+                      const origRP = (isWGL2 && gl instanceof WebGL2RenderingContext)
+                        ? (origRPWGL2 || origRPWGL1) : origRPWGL1;
+                      if (gl && origRP) {
+                        const w = this.width, h = this.height;
+                        const px = new Uint8Array(w * h * 4);
+                        origRP.call(gl, 0, 0, w, h, 0x1908 /*RGBA*/, 0x1401 /*UNSIGNED_BYTE*/, px);
+                        perturbRawPixels(px);
+                        const tmp = document.createElement('canvas');
+                        tmp.width = w; tmp.height = h;
+                        const tmpCtx = tmp.getContext('2d');
+                        if (tmpCtx) {
+                          const id = tmpCtx.createImageData(w, h);
+                          id.data.set(px);
+                          tmpCtx.putImageData(id, 0, 0);
+                          _isPerturbing = false;
+                          return origToDataURL.apply(tmp, arguments);
+                        }
+                      }
+                    } catch {}
                   }
                 } catch {} finally { _isPerturbing = false; }
               }
