@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import toast from 'react-hot-toast';
@@ -46,11 +46,11 @@ function parseFirebaseError(err) {
     'auth/weak-password':          'Password is too weak (minimum 6 characters).',
     'auth/popup-closed-by-user':   'Sign-in window was closed.',
     'auth/popup-blocked':          'Browser blocked the popup. Please allow popups.',
-    'auth/network-request-failed': 'Network error.',
+    'auth/network-request-failed': 'Network error. Check your connection and try again.',
     'auth/configuration-not-found':
-      'Firebase is not configured. Fill in firebaseConfig in src/config/firebase.config.js',
+      'Google Sign-In is not enabled. Please enable it in Firebase Console -> Authentication -> Sign-in method.',
   };
-  return map[code] || err?.message || 'An error occurred.';
+  return map[code] || err?.message || 'An error occurred. Please try again.';
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────

@@ -34,13 +34,13 @@ export default async function handler(req, res) {
   if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Authorization token required.' });
   }
-  const tokenEmail = await verifyFirebaseToken(authHeader.slice(7));
-  if (!tokenEmail) {
+  const decoded = await verifyFirebaseToken(authHeader.slice(7));
+  if (!decoded || !decoded.email) {
     return res.status(401).json({ error: 'Invalid or expired token.' });
   }
 
   const { machineCode } = req.body || {};
-  const email = tokenEmail;
+  const email = decoded.email;
 
   if (!machineCode || !MACHINE_CODE_RE.test(machineCode.trim())) {
     return res.status(400).json({

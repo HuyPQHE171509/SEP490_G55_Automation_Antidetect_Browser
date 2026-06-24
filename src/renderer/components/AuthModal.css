@@ -1,0 +1,335 @@
+/* ── AuthModal.css ── */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: #0d1117; /* Very dark blue/black background */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  font-family: 'Inter', sans-serif;
+}
+
+.auth-modal-container {
+  width: 100%;
+  max-width: 420px;
+  background-color: #121721;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  padding: 40px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header Logo ── */
+.auth-header-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.auth-logo-box {
+  width: 48px;
+  height: 48px;
+  background: rgba(56, 189, 248, 0.1);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-header-logo h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+}
+
+/* ── Title ── */
+.auth-title {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.auth-title h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.auth-title p {
+  margin: 0;
+  font-size: 15px;
+  color: #8b949e;
+}
+
+/* ── Google Button ── */
+.auth-google-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px;
+  color: #e6edf3;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.auth-google-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.auth-google-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-google-icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* ── OR Divider ── */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 24px 0;
+}
+
+.auth-divider-line {
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.auth-divider-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6e7681;
+  letter-spacing: 0.05em;
+}
+
+/* ── Form Fields ── */
+.auth-form-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #8b949e;
+  letter-spacing: 0.05em;
+}
+
+.auth-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.auth-forgot-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  color: #38bdf8;
+  cursor: pointer;
+}
+
+.auth-forgot-link:hover {
+  text-decoration: underline;
+}
+
+.auth-input-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.auth-input-icon {
+  position: absolute;
+  left: 14px;
+  color: #6e7681;
+  pointer-events: none;
+}
+
+.auth-input {
+  width: 100%;
+  height: 46px;
+  box-sizing: border-box;
+  background-color: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 8px;
+  padding: 0 44px !important;
+  color: #ffffff !important;
+  font-size: 15px;
+  font-family: inherit;
+  line-height: normal;
+  transition: all 0.2s;
+}
+
+.auth-input:-webkit-autofill,
+.auth-input:-webkit-autofill:hover, 
+.auth-input:-webkit-autofill:focus, 
+.auth-input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 40px #1a202c inset !important;
+  -webkit-text-fill-color: white !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 8px;
+}
+
+.auth-input::placeholder {
+  color: #484f58;
+}
+
+.auth-input:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 1px #38bdf8;
+}
+
+.auth-pw-toggle {
+  position: absolute;
+  right: 14px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: #6e7681;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.auth-pw-toggle:hover {
+  color: #c9d1d9;
+}
+
+/* ── Submit Button ── */
+.auth-submit-btn {
+  width: 100%;
+  margin-top: 8px;
+  background-color: #38bdf8;
+  color: #0d1117;
+  border: none;
+  border-radius: 8px;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 4px 14px rgba(56, 189, 248, 0.3);
+  transition: all 0.2s;
+}
+
+.auth-submit-btn:hover:not(:disabled) {
+  background-color: #0ea5e9;
+  transform: translateY(-1px);
+}
+
+.auth-submit-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* ── Error Box ── */
+.auth-error-box {
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  color: #fca5a5;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  text-align: center;
+}
+
+/* ── Footer ── */
+.auth-footer-text {
+  margin-top: 32px;
+  text-align: center;
+  font-size: 14px;
+  color: #8b949e;
+}
+
+.auth-toggle-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #38bdf8;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.auth-toggle-link:hover {
+  text-decoration: underline;
+}
+
+/* ── Back to Home Link ── */
+.auth-back-link {
+  margin-top: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #6e7681;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.auth-back-link:hover {
+  color: #c9d1d9;
+}
+
+/* ── Loading Spinner ── */
+.auth-spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(13, 17, 23, 0.3);
+  border-top-color: #0d1117;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.auth-spinner.mini {
+  width: 18px;
+  height: 18px;
+  border-color: rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

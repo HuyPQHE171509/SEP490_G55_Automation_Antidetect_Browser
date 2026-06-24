@@ -63,8 +63,8 @@ function App() {
           toastOptions={{ className: 'dark:bg-slate-800 dark:text-white border border-primary/20' }}
         />
         <Routes>
-          {/* ── Public ───────────────────────────────────────────────────── */}
-          <Route path="/" element={<LandingPage />} />
+          {/* ── Public / Root (now requires login) ────────────────────────── */}
+          <Route path="/" element={<UserRoute><LandingPage /></UserRoute>} />
 
           {/* ── Checkout (requires login) ───────────────────────────────── */}
           <Route path="/checkout" element={<UserRoute><CheckoutPage /></UserRoute>} />

@@ -14,6 +14,7 @@ import EngineInstallModal from './components/EngineInstallModal';
 import LinkProxyModal from './components/LinkProxyModal';
 import LivePreviewPanel from './components/LivePreviewPanel';
 import MacroManager from './components/MacroManager';
+import AuthModal from './components/AuthModal';
 import './App.css';
 import { useI18n } from './i18n/index';
  
@@ -21,6 +22,14 @@ function App() {
   const { t, lang, setLang } = useI18n();
   // Engine install modal: { profileId, engine, headless } | null
   const [engineInstallState, setEngineInstallState] = useState(null);
+  
+  const [currentUser, setCurrentUser] = useState(() => {
+    const token = localStorage.getItem('firebase_id_token');
+    const uid = localStorage.getItem('firebase_uid');
+    const email = localStorage.getItem('firebase_email');
+    return token && uid ? { token, uid, email } : null;
+  });
+
   const [activeNav, setActiveNav] = useState('profiles');
   const [profiles, setProfiles] = useState([]);
   const [selectedProfile, setSelectedProfile] = useState(null);
@@ -336,7 +345,7 @@ function App() {
     const h = headless !== undefined ? headless : !!p?.settings?.headless;
     const eng = engine || p?.settings?.engine || 'playwright';
     try {
-      const options = { headless: h, engine: eng };
+      const options = { headless: h, engine: eng, token: currentUser?.token };
       const result = await window.electronAPI.launchProfile(profileId, options);
       if (!result.success) {
         setErrorProfiles(prev => ({ ...prev, [profileId]: true }));
@@ -348,7 +357,7 @@ function App() {
       addToast('Error launching profile: ' + e.message, 'error', 5000);
     }
   };
-  const handleStopProfile = async (profileId) => { try { const res = profileId === '__ALL__' ? await window.electronAPI.stopAllProfiles() : await window.electronAPI.stopProfile(profileId); if (!res.success) alert('Error stopping profile: ' + res.error); await refreshRunningStatus(); } catch (e) { alert('Error stopping profile: ' + e.message); } };
+  const handleStopProfile = async (profileId) => { try { const res = profileId === '__ALL__' ? await window.electronAPI.stopAllProfiles() : await window.electronAPI.stopProfile(profileId, { token: currentUser?.token }); if (!res.success) alert('Error stopping profile: ' + res.error); await refreshRunningStatus(); } catch (e) { alert('Error stopping profile: ' + e.message); } };
   const handleSetHeadless = async (profileId, value) => { if (runningWs[profileId]) return; setHeadlessPrefs(prev => ({ ...prev, [profileId]: !!value })); try { const p = profiles.find(x => x.id === profileId); if (p) { const updated = { ...p, settings: { ...(p.settings || {}), headless: !!value } }; const res = await window.electronAPI.saveProfile(updated); if (res?.success && res.profile) setProfiles(prev => prev.map(pp => pp.id === profileId ? res.profile : pp)); } } catch { } };
   const handleSetEngine = async (profileId, value) => { if (runningWs[profileId]) return; setEnginePrefs(prev => ({ ...prev, [profileId]: value })); try { const p = profiles.find(x => x.id === profileId); if (p) { const updated = { ...p, settings: { ...(p.settings || {}), engine: value } }; const res = await window.electronAPI.saveProfile(updated); if (res?.success && res.profile) setProfiles(prev => prev.map(pp => pp.id === profileId ? res.profile : pp)); } } catch { } };
   const handleToggleProfile = async (profileId) => {
@@ -583,7 +592,7 @@ function App() {
     if (skipped > 0) addToast(`${skipped} profile(s) skipped — max ${maxConcurrent} concurrent browsers reached.`, 'warning', 5000);
     await refreshRunningStatus();
   };
-  const handleStopSelected = async () => { const ids = getSelectedList(); await Promise.all(ids.map(id => window.electronAPI.stopProfile(id))); await refreshRunningStatus(); };
+  const handleStopSelected = async () => { const ids = getSelectedList(); await Promise.all(ids.map(id => window.electronAPI.stopProfile(id, { token: currentUser?.token }))); await refreshRunningStatus(); };
   const handleDeleteSelected = async () => { const ids = getSelectedList(); if (!ids.length) return; await handleDeleteBulk(ids); };
   const handleCloneSelected = async () => { const ids = getSelectedList(); if (!ids.length) return; await handleCloneBulk(ids); };
 
@@ -704,6 +713,21 @@ function App() {
     }
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('firebase_id_token');
+    localStorage.removeItem('firebase_uid');
+    localStorage.removeItem('firebase_email');
+    setCurrentUser(null);
+  };
+
+  if (!currentUser) {
+    return (
+      <div className="app">
+        <AuthModal onLoginSuccess={(user) => setCurrentUser(user)} />
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       {/* ── Update banner ──────────────────────────────────────────────── */}
@@ -758,6 +782,7 @@ function App() {
           onNavigate={(id) => { setShowForm(false); setSelectedProfile(null); setActiveNav(id); }}
           onCreateProfile={handleCreateProfile}
           apiStatus={apiStatus}
+          onLogout={handleLogout}
         />
       )}
 

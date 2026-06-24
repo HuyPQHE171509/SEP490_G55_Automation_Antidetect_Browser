@@ -109,6 +109,22 @@ async function launchProfileInternal(profileId, options = {}) {
       const running = runningProfiles.get(profileId);
       return { success: true, wsEndpoint: running.wsEndpoint || 'pipe' };
     }
+
+    // Cloud Sync: Pull profile data before launching if token is provided
+    if (options && options.token) {
+      try {
+        const { pullProfileData } = require('../services/cloudSync');
+        appendLog(profileId, 'Pulling profile data from cloud...');
+        const pullRes = await pullProfileData(profileId, options.token);
+        if (!pullRes.success) {
+          appendLog(profileId, `Cloud pull failed: ${pullRes.error}`);
+          // Proceed anyway to allow local launch fallback
+        }
+      } catch (err) {
+        appendLog(profileId, `Cloud pull error: ${err.message}`);
+      }
+    }
+
     const settings = profile.settings || {};
     let startUrl = settings.startupPage || profile.startUrl || 'https://hlmck.vercel.app/';
     if (startUrl === 'https://www.google.com' || startUrl === 'https://www.google.com/') {
@@ -667,6 +683,20 @@ async function launchProfileInternal(profileId, options = {}) {
       try { await context.close(); } catch { } // đóng browser context (tắt tất cả tab)
       try { await browser?.close?.(); } catch { } // đóng browser process
       broadcastRunningMap(); // thông báo UI cập nhật trạng thái profile thành STOPPED
+
+      // Cloud Sync: Push profile data to cloud if token was provided
+      if (options && options.token) {
+        try {
+          const { pushProfileData } = require('../services/cloudSync');
+          appendLog(profileId, 'Pushing profile data to cloud...');
+          const pushRes = await pushProfileData(profileId, options.token);
+          if (!pushRes.success) {
+            appendLog(profileId, `Cloud push failed: ${pushRes.error}`);
+          }
+        } catch (err) {
+          appendLog(profileId, `Cloud push error: ${err.message}`);
+        }
+      }
     };
     // Lắng nghe sự kiện đóng từ phía Playwright — context.close() hoặc browser crash/disconnect
     context.on('close', () => cleanupPlaywright('Context closed'));

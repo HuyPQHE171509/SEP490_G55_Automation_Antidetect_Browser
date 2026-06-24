@@ -334,14 +334,14 @@ function registerIpcHandlers(extra = {}) {
     return r;
   });
   // [UC_08.06 / UC_15.02] Dừng trình duyệt đang chạy của profile
-  handle('stop-profile', async (_e, profileId) => {
+  handle('stop-profile', async (_e, profileId, options = {}) => {
     appendLog(profileId, 'Profile stop requested');
-    return await stopProfileInternal(profileId);
+    return await stopProfileInternal(profileId, options);
   });
   // [UC_08.06] Dừng tất cả trình duyệt đang chạy
-  handle('stop-all-profiles', async () => {
+  handle('stop-all-profiles', async (_e, options = {}) => {
     appendLog('system', 'Stop all profiles requested');
-    return await stopAllProfilesInternal();
+    return await stopAllProfilesInternal(options);
   });
   handle('get-profile-log', async (_e, profileId) => await getProfileLogInternal(profileId));
   handle('get-cookies', async (_e, profileId) => await getCookiesInternal(profileId));
