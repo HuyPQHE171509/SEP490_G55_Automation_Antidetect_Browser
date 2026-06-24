@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useI18n } from '../i18n/index';
 import BrowserRuntimes from './BrowserRuntimes';
 import { getCheckoutUrl } from '../config/app.config';
+import AuditLogViewer from './AuditLogViewer';
 
 export default function SettingsTab({
     apiStatus,
@@ -19,18 +20,38 @@ export default function SettingsTab({
     const [licenseStatus, setLicenseStatus] = useState(() => !!localStorage.getItem('hl-license-activated'));
     const [licenseError, setLicenseError] = useState('');
     const [licenseLoading, setLicenseLoading] = useState(false);
+    const [confirmDeactivate, setConfirmDeactivate] = useState(false);
     const [autoStartApi, setAutoStartApi] = useState(false);
     const [maxBrowsers, setMaxBrowsers] = useState(5);
+    const [saveFeedback, setSaveFeedback] = useState(null); // 'ok' | 'err' | null
 
     useEffect(() => {
         window.electronAPI.getMachineCode()
             .then(code => setMachineCode(code || 'UNKNOWN'))
             .catch(console.error);
+        // Load saved maxConcurrentBrowsers
+        window.electronAPI.loadSettings?.()
+            .then(res => {
+                const val = res?.settings?.maxConcurrentBrowsers;
+                if (val != null) setMaxBrowsers(Number(val));
+            })
+            .catch(() => {});
     }, []);
+
+    const handleSaveSettings = async () => {
+        try {
+            await window.electronAPI.saveSettings({ maxConcurrentBrowsers: Math.max(1, parseInt(maxBrowsers, 10) || 5) });
+            setSaveFeedback('ok');
+        } catch {
+            setSaveFeedback('err');
+        } finally {
+            setTimeout(() => setSaveFeedback(null), 2000);
+        }
+    };
 
     const handleActivateLicense = async () => {
         const key = licenseKey.trim();
-        if (!key) { setLicenseError('Vui lòng nhập license key.'); return; }
+        if (!key) { setLicenseError(t('license.error.empty', 'Please enter a license key.')); return; }
         setLicenseLoading(true);
         setLicenseError('');
         try {
@@ -39,32 +60,36 @@ export default function SettingsTab({
                 localStorage.setItem('hl-license-activated', key);
                 setLicenseStatus(true);
             } else {
-                setLicenseError('License key không hợp lệ với máy này.');
+                setLicenseError(t('license.error.invalid', 'Invalid license key for this machine.'));
             }
         } catch {
-            setLicenseError('Đã xảy ra lỗi. Thử lại sau.');
+            setLicenseError(t('license.error.system', 'An error occurred. Please try again later.'));
         } finally {
             setLicenseLoading(false);
         }
     };
 
-    const handleDeactivateLicense = () => {
+    const handleDeactivateLicense = async () => {
+        if (window.electronAPI.deactivateLicense) {
+            await window.electronAPI.deactivateLicense();
+        }
         localStorage.removeItem('hl-license-activated');
         setLicenseStatus(false);
         setLicenseKey('');
+        setConfirmDeactivate(false);
     };
 
     return (
-        <div className="w-full h-full flex flex-col p-4 overflow-y-auto">
-            <div className="max-w-[700px]">
+        <div className="w-full h-full flex flex-col p-4 overflow-y-auto overflow-x-hidden">
+            <div className="w-full max-w-[700px] min-w-0">
                 <h1 className="text-2xl font-bold text-[var(--fg)] mb-6 tracking-tight">{t('settings.title') || 'Settings'}</h1>
 
                 {/* Appearance */}
                 <div className="card relative p-4 mb-6 mt-4">
                     <div className="absolute -top-3 left-4 bg-[var(--card)] px-2 text-[0.85rem] font-bold text-[var(--fg)]">Appearance</div>
-                    <div className="mb-2 pt-1"> 
+                    <div className="mb-2 pt-1">
                         <label className="block text-[0.75rem] text-[var(--muted)] mb-1.5">Theme</label>
-                        <select 
+                        <select
                             value={theme}
                             onChange={(e) => setTheme(e.target.value)}
                             className="w-[160px] text-[0.75rem] py-1 cursor-pointer"
@@ -72,8 +97,8 @@ export default function SettingsTab({
                             <option value="Light">Light</option>
                             <option value="Dark">Dark</option>
                         </select>
+                        <p className="text-[0.7rem] text-[var(--muted)] mt-1">Current mode: {theme}</p>
                     </div>
-                    <p className="text-[0.7rem] text-[var(--muted)]">Current mode: {theme}</p>
                 </div>
 
                 {/* License */}
@@ -82,20 +107,43 @@ export default function SettingsTab({
                     <div className="flex items-center gap-2 mb-3 pt-1">
                         <div className={`w-2 h-2 rounded-full ${licenseStatus ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
                         <span className="text-[0.85rem] font-medium text-[var(--fg)]">
-                            {licenseStatus ? 'Licensed ✔' : 'Not licensed'}
+                            {licenseStatus ? t('license.status.licensed', 'Licensed ✔') : t('license.status.notLicensed', 'Not licensed')}
                         </span>
                     </div>
                     {licenseStatus ? (
                         <div>
-                            <p className="text-[0.7rem] text-emerald-500 mb-3">Đã kích hoạt. Không giới hạn profiles.</p>
-                            <button onClick={handleDeactivateLicense} className="text-[0.7rem] text-red-400 hover:underline">
-                                Hủy kích hoạt
-                            </button>
+                            <p className="text-[0.7rem] text-emerald-500 mb-3">{t('license.status.activated', 'Activated. Unlimited profiles.')}</p>
+                            {confirmDeactivate ? (
+                                <div className="flex items-center gap-3 mt-1">
+                                    <span className="text-[0.72rem] text-[var(--fg)]">
+                                        {t('license.deactivateConfirm', 'Your license key will be permanently lost. This action cannot be undone.')}
+                                    </span>
+                                    <button
+                                        onClick={handleDeactivateLicense}
+                                        className="text-[0.72rem] font-semibold text-white bg-red-500 hover:bg-red-600 px-2.5 py-1 rounded transition"
+                                    >
+                                        {t('license.deactivateConfirmYes', 'Yes, deactivate')}
+                                    </button>
+                                    <button
+                                        onClick={() => setConfirmDeactivate(false)}
+                                        className="text-[0.72rem] text-[var(--muted)] hover:text-[var(--fg)] transition"
+                                    >
+                                        {t('common.cancel', 'Cancel')}
+                                    </button>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => setConfirmDeactivate(true)}
+                                    className="text-[0.7rem] text-red-400 hover:underline"
+                                >
+                                    {t('license.deactivateBtn', 'Deactivate License')}
+                                </button>
+                            )}
                         </div>
                     ) : (
                         <>
-                            <p className="text-[0.7rem] text-red-500 mb-1">No license key configured</p>
-                            <p className="text-[0.7rem] text-[var(--muted)] mb-3">Free plan: up to 5 profiles.</p>
+                            <p className="text-[0.7rem] text-red-500 mb-1">{t('license.status.noKey', 'No license key configured')}</p>
+                            <p className="text-[0.7rem] text-[var(--muted)] mb-3">{t('license.status.freePlan', 'Free plan: up to 5 profiles.')}</p>
                             <div className="flex gap-2 mb-1">
                                 <input
                                     type="text"
@@ -111,7 +159,7 @@ export default function SettingsTab({
                                     disabled={licenseLoading}
                                     className="btn btn-success px-3 py-1.5 text-[0.75rem] disabled:opacity-50"
                                 >
-                                    {licenseLoading ? '...' : 'Activate'}
+                                    {licenseLoading ? t('license.checking', 'Checking...') : t('license.activateBtn', 'Activate')}
                                 </button>
                             </div>
                             {licenseError && <p className="text-[0.7rem] text-red-400 mb-2">{licenseError}</p>}
@@ -135,48 +183,63 @@ export default function SettingsTab({
                 </div>
 
                 {/* REST API Server */}
-                <div className="card relative p-4 mb-6 mt-4">
-                    <div className="absolute -top-3 left-4 bg-[var(--card)] px-2 text-[0.85rem] font-bold text-[var(--fg)]">REST API Server</div>
-                    <div className="flex items-center justify-between mb-3 pt-1">
-                        <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${apiStatus?.running ? 'bg-emerald-500' : 'bg-slate-400'}`}></div>
-                            <span className="text-[0.85rem] font-medium text-[var(--fg)]">{apiStatus?.running ? 'Running' : 'Stopped'}</span>
+                <div className="card border border-[var(--border)] rounded-md overflow-hidden mb-6 mt-4">
+                    <div className="bg-[var(--card)] px-4 py-3 border-b border-[var(--border)]">
+                        <h2 className="text-[0.85rem] font-bold text-[var(--fg)] uppercase tracking-wider">REST API SERVER</h2>
+                    </div>
+                    <div className="p-4">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                                <div className={`w-2.5 h-2.5 rounded-full ${apiStatus?.running ? 'bg-emerald-500' : 'bg-slate-400'}`}></div>
+                                <span className="text-[0.95rem] font-medium text-[var(--fg)]">{apiStatus?.running ? 'Running' : 'Stopped'}</span>
+                            </div>
+                            {apiStatus?.running && (
+                                <button
+                                    onClick={() => window.electronAPI.openExternal(`http://localhost:${apiDesiredPort || 4000}/docs`)}
+                                    className="text-[0.85rem] text-[var(--primary)] hover:underline flex items-center gap-1 font-medium"
+                                >
+                                    Swagger UI <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                                </button>
+                            )}
                         </div>
+
                         {apiStatus?.running && (
-                            <button
-                                onClick={() => window.electronAPI.openExternal(`http://localhost:${apiDesiredPort || 4000}/docs`)}
-                                className="text-[0.8rem] text-[var(--primary)] hover:underline flex items-center gap-1"
-                            >
-                                Open Swagger UI ↗
-                            </button>
+                            <div className="mb-5">
+                                <div className="bg-[var(--bg)] border border-[var(--border)] rounded-md px-3 py-2 text-[0.85rem] text-[var(--muted)] font-mono flex items-center">
+                                    http://localhost:{apiDesiredPort || 4000}/docs
+                                </div>
+                            </div>
                         )}
-                    </div>
-                    {apiStatus?.running && (
-                        <div className="mb-3 text-[0.8rem] text-[var(--fg)] font-mono">
-                            http://localhost:{apiDesiredPort || 4000}/docs
+
+                        <div className="flex flex-wrap items-center gap-3 mb-4">
+                            <span className="text-[0.85rem] text-[var(--muted)]">Port</span>
+                            <input
+                                type="number"
+                                min="1" max="65535"
+                                value={apiDesiredPort || 4000}
+                                onChange={e => { setApiDesiredPort(e.target.value); applyPortChange(Number(e.target.value)); }}
+                                className="w-[80px] text-[0.85rem] py-1 px-2 rounded border border-[var(--border)] bg-[var(--bg)]"
+                                disabled={apiStatus?.running}
+                            />
+                            <button
+                                onClick={handleToggleApiRun}
+                                className={`btn px-4 py-1.5 text-[0.85rem] font-medium ${apiStatus?.running ? 'btn-danger' : 'btn-success'}`}
+                            >
+                                {apiStatus?.running ? 'Stop' : 'Start Server'}
+                            </button>
                         </div>
-                    )}
-                    <div className="flex items-center gap-3 mb-3">
-                        <span className="text-[0.75rem] text-[var(--muted)] font-medium">Port</span>
-                        <input
-                            type="number"
-                            min="1" max="65535"
-                            value={apiDesiredPort || 4000}
-                            onChange={e => { setApiDesiredPort(e.target.value); applyPortChange(Number(e.target.value)); }}
-                            className="w-[80px] text-[0.75rem] py-1"
-                        />
-                        <button
-                            onClick={handleToggleApiRun}
-                            className={`btn px-3 py-1.5 text-[0.75rem] ${apiStatus?.running ? 'btn-danger' : 'btn-success'}`}
-                        >
-                            {apiStatus?.running ? 'Stop Server' : 'Start Server'}
-                        </button>
+
+                        <label className="flex items-center gap-2 text-[0.85rem] text-[var(--fg)] mb-2 cursor-pointer">
+                            <input 
+                                type="checkbox" 
+                                checked={autoStartApi} 
+                                onChange={e => setAutoStartApi(e.target.checked)} 
+                                className="rounded border-[var(--border)] w-4 h-4 cursor-pointer" 
+                            />
+                            Auto-start server on app launch
+                        </label>
+                        <p className="text-[0.8rem] text-[var(--muted)]">Exposes REST API for automation scripting. Swagger docs at /docs.</p>
                     </div>
-                    <label className="flex items-center gap-2 text-[0.7rem] text-[var(--muted)] mb-2 cursor-pointer">
-                        <input type="checkbox" checked={autoStartApi} onChange={e => setAutoStartApi(e.target.checked)} className="rounded cursor-pointer" />
-                        Auto-start server on app launch
-                    </label>
-                    <p className="text-[0.7rem] text-[var(--muted)]">Exposes REST API for automation scripting. Swagger docs available at /docs when running.</p>
                 </div>
 
                 {/* Playwright Engines Control */}
@@ -194,31 +257,20 @@ export default function SettingsTab({
                         className="w-[80px] text-[0.75rem] py-1 mb-2"
                     />
                     <p className="text-[0.7rem] text-[var(--muted)] mb-4">Limits simultaneous browser instances. Higher = more RAM usage.</p>
-                    <button className="btn btn-success px-4 py-1.5 text-[0.75rem]">Save Settings</button>
+                    <button className="btn btn-success px-4 py-1.5 text-[0.75rem]" onClick={handleSaveSettings}>
+                        {saveFeedback === 'ok' ? '✓ Saved' : saveFeedback === 'err' ? '✗ Failed' : 'Save Settings'}
+                    </button>
                 </div>
 
-                {/* Environment Variables */}
-                <div className="card relative p-4 mb-6 mt-8">
-                    <div className="absolute -top-3 left-4 bg-[var(--card)] px-2 text-[0.85rem] font-bold text-[var(--fg)]">Environment Variables</div>
-                    <div className="mb-4 pt-1">
-                        <span className="text-[0.75rem] font-bold text-emerald-500 block mb-1">LOG_LEVEL</span>
-                        <p className="text-[0.7rem] text-[var(--muted)] ml-4">Logging level: trace, debug, info, warn, error, fatal</p>
-                        <p className="text-[0.7rem] text-[var(--muted)] ml-4">Default: info</p>
-                    </div>
-                    <div className="mb-4">
-                        <span className="text-[0.75rem] font-bold text-emerald-500 block mb-1">MAX_CONCURRENT_BROWSERS</span>
-                        <p className="text-[0.7rem] text-[var(--muted)] ml-4">Maximum number of browser instances running simultaneously</p>
-                        <p className="text-[0.7rem] text-[var(--muted)] ml-4">Default: 5 (overrides UI setting above)</p>
-                    </div>
-                    <div className="mb-4">
-                        <span className="text-[0.75rem] font-bold text-emerald-500 block mb-1">MASTER_ENCRYPTION_KEY</span>
-                        <p className="text-[0.7rem] text-[var(--muted)] ml-4">32-byte base64-encoded key for encrypting proxy credentials in database</p>
-                        <p className="text-[0.7rem] text-amber-500 ml-4 mt-0.5 flex items-center gap-1"><svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm0 3.8l7.5 13.2H4.5L12 5.8zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/></svg>Required for production use. Dev mode uses insecure default key.</p>
-                    </div>
-                    <div className="mt-4 border-t border-[var(--border)] pt-2">
-                        <p className="text-[0.7rem] text-[var(--muted)] italic"><strong className="font-semibold not-italic">Note:</strong> Environment variables must be set before launching the application. Restart required after changes.</p>
+
+                {/* Audit Log */}
+                <div className="card relative p-4 mb-6 mt-4">
+                    <div className="absolute -top-3 left-4 bg-[var(--card)] px-2 text-[0.85rem] font-bold text-[var(--fg)]">Audit Log</div>
+                    <div className="pt-1">
+                        <AuditLogViewer />
                     </div>
                 </div>
+
             </div>
         </div>
     );

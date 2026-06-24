@@ -1,4 +1,4 @@
-# OBT Automation Antidetect Browser
+# HL-MCK Automation Antidetect Browser
 
 An Electron + React application for managing browser profiles with advanced antidetect capabilities. This tool allows users to create, manage, and launch browser profiles with customized fingerprints to avoid browser detection.
 
@@ -27,9 +27,7 @@ An Electron + React application for managing browser profiles with advanced anti
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/OngBanTat/ObtAutomationAntidetectBrowser.git
-cd ObtAutomationAntidetectBrowser
-```
+
 
 2. Install dependencies:
 ```bash

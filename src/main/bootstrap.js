@@ -6,7 +6,6 @@ const { loadSettings, saveSettings } = require('./storage/settings');
 const { registerIpcHandlers } = require('./ipc/handlers');
 const { createRestServer } = require('./api/restServer');
 const { runningProfiles } = require('./state/runtime');
-const { isWsAlive } = require('./engine/health');
 const { appendLog } = require('./logging/logger');
 const { startAutomationScheduler } = require('./engine/automation');
 const { setMainWindowRef } = require('./services/browserManagerService');
@@ -25,26 +24,12 @@ function startBackgroundHeartbeat(intervalMs = 30000) {
         const age = info.startedAt ? (Date.now() - info.startedAt) : Infinity;
         if (age < HEARTBEAT_GRACE_MS) continue;
 
-        // Playwright pipe mode has no WS endpoint — use context/browser state instead
-        if (info.engine === 'playwright') {
-          const dead = info.context?.isClosed?.() || info.browser?.isConnected?.() === false;
-          if (dead) {
-            try { info?.forwarder?.stop?.(); } catch {}
-            runningProfiles.delete(id);
-            appendLog(id, 'Heartbeat: Playwright browser disconnected, removing');
-            changed = true;
-          }
-          continue;
-        }
-
-        // CDP engine — check WS endpoint
-        const ws = info.wsEndpoint;
-        const alive = ws ? await isWsAlive(ws) : false;
-        if (!alive) {
-          try { info?.heartbeat && clearInterval(info.heartbeat); } catch {}
-          try { await info?.forwarder?.stop?.(); } catch {}
+        // Playwright pipe mode has no WS endpoint — use context/browser state
+        const dead = info.context?.isClosed?.() || info.browser?.isConnected?.() === false;
+        if (dead) {
+          try { info?.forwarder?.stop?.(); } catch {}
           runningProfiles.delete(id);
-          appendLog(id, 'Heartbeat: stale CDP profile removed');
+          appendLog(id, 'Heartbeat: Playwright browser disconnected, removing');
           changed = true;
         }
       } catch (e) {
@@ -71,8 +56,7 @@ app.whenReady().then(async () => {
   //    This ensures all handlers are ready before renderer can call them.
   const settingsProvider = () => loadSettings();
   settingsProvider.set = (st) => { try { saveSettings(st); } catch {} };
-  let swaggerUi = null; try { swaggerUi = require('swagger-ui-express'); } catch {}
-  const restServer = createRestServer({ settingsProvider, broadcaster: () => {}, swaggerUi });
+  const restServer = createRestServer({ settingsProvider, broadcaster: () => {} });
   const handlers = { ...require('./controllers/profiles'), ...require('./storage/profiles') };
   registerIpcHandlers({ restServer, handlers });
 
@@ -86,16 +70,54 @@ app.whenReady().then(async () => {
   restServer.setBroadcaster?.(broadcaster);
 
   // 5. Start REST API server in background (don't block window)
-  restServer.start(handlers).catch(e => appendLog('system', `REST start error: ${e?.message || e}`));
+  restServer.start(handlers).then(r => {
+    if (r?.ok) {
+      console.log('[bootstrap] REST API server started OK');
+    } else {
+      console.error('[bootstrap] REST API server start returned:', r);
+    }
+  }).catch(e => {
+    console.error('[bootstrap] REST API server start error:', e);
+    appendLog('system', `REST start error: ${e?.message || e}`);
+  });
 
   // 6. Background tasks
   startBackgroundHeartbeat();
   try { startAutomationScheduler(); } catch (e) { appendLog('system', `Automation scheduler failed to start: ${e?.message || e}`); }
 
+  // 6b. Restore all saved cron jobs from scripts.json
+  // Khi app khởi động lại, các script đã đặt schedule trước đó cần được tái kích hoạt cron job
+  // Nếu không gọi refreshAllScripts() ở đây thì user phải edit lại từng script để job chạy lại
+  try {
+    const { refreshAllScripts } = require('./engine/scriptScheduler');
+    refreshAllScripts();
+    appendLog('system', 'Script scheduler: restored cron jobs from scripts.json');
+  } catch (e) {
+    appendLog('system', `Script scheduler restore failed: ${e?.message || e}`);
+  }
+
+  // Sync license revocation/expiry with web server (non-blocking, graceful if offline)
+  const { syncLicenseStatus } = require('./services/machineId');
+  syncLicenseStatus().catch(() => {});
+
   // 7. Signal renderer that backend is fully ready
   mainWindow.webContents.on('did-finish-load', () => {
     try { mainWindow.webContents.send('backend-ready', true); } catch {}
   });
+
+  // 8. Check for updates in background (non-blocking, 10s delay để không làm chậm startup)
+  setTimeout(async () => {
+    try {
+      const { checkForUpdate } = require('./services/UpdateService');
+      const result = await checkForUpdate();
+      if (result?.hasUpdate && result?.release) {
+        appendLog('system', `[Update] New version available: v${result.release.version}`);
+        try { mainWindow.webContents.send('update-available', result.release); } catch {}
+      }
+    } catch (e) {
+      appendLog('system', `[Update] Check failed: ${e?.message || e}`);
+    }
+  }, 10000);
 });
 
 // Graceful shutdown (dev convenience)

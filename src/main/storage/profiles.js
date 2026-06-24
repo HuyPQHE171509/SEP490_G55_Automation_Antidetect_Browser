@@ -58,7 +58,6 @@ const FALLBACK_SETTINGS = {
     geolocation: true,
     antiDetection: false,
   },
-  cdpApplyInitScript: true,
   advanced: {
     platform: 'Win32',
     dnt: false,
@@ -93,7 +92,6 @@ const DEFAULT_SETTINGS = {
     geolocation: true,
     antiDetection: false,
   },
-  cdpApplyInitScript: true,
 };
 
 // Automation defaults: simple, explicit opt-in
@@ -140,7 +138,9 @@ function validateProfileInputBasic(p) {
     errors.push('Unsupported browser value');
   }
   const engine = p.settings?.engine;
-  if (engine && !['playwright','playwright-firefox','camoufox','cdp','auto'].includes(engine)) errors.push('settings.engine must be playwright, playwright-firefox, camoufox, cdp, or auto');
+  // 'cdp' is accepted here only so legacy profile data passing through validation does not error;
+  // normalizeProfileInput migrates it to 'playwright'.
+  if (engine && !['playwright','playwright-firefox','cdp','auto','camoufox','cloakbrowser'].includes(engine)) errors.push('settings.engine must be playwright, playwright-firefox, camoufox, cloakbrowser, or auto');
   const cpu = p.settings?.cpuCores; if (cpu != null && (!Number.isInteger(cpu) || cpu < 1 || cpu > 64)) errors.push('cpuCores must be 1-64');
   const mem = p.settings?.memoryGB; if (mem != null && (!Number.isInteger(mem) || mem < 1 || mem > 256)) errors.push('memoryGB must be 1-256');
   return errors;
@@ -149,19 +149,40 @@ function validateProfileInputBasic(p) {
 function normalizeProfileInput(input = {}, existing = null) {
   const base = existing || {};
   const isNewProfile = !existing || !existing.id;
+  
+  let fallbackFp = FALLBACK_FINGERPRINT;
+  let fallbackSettings = DEFAULT_SETTINGS;
+
+  // Generate a random fingerprint for completely new profiles if not explicitly provided
+  if (isNewProfile && (!input.fingerprint || Object.keys(input.fingerprint).length === 0)) {
+    const generated = generateDefaultFingerprint();
+    fallbackFp = generated.fingerprint || FALLBACK_FINGERPRINT;
+    fallbackSettings = generated.settings || FALLBACK_SETTINGS;
+  }
+
   const name = (input.name != null ? String(input.name) : String(base.name || ''))?.trim();
   const description = input.description != null ? String(input.description) : (base.description || '');
   const startUrl = normalizeStartUrl(input.startUrl || base.startUrl || 'https://www.google.com');
-  const fingerprint = deepMerge(FALLBACK_FINGERPRINT, deepMerge(base.fingerprint || {}, input.fingerprint || {}));
-  const settings = deepMerge(DEFAULT_SETTINGS, deepMerge(base.settings || {}, input.settings || {}));
-  if (!settings.engine || settings.engine === 'auto') {
-    const { resolveChromeExecutable } = require('./settings');
-    if (resolveChromeExecutable && resolveChromeExecutable()) {
-      settings.engine = 'cdp';
-    } else {
-      settings.engine = 'playwright';
+  const fingerprint = deepMerge(fallbackFp, deepMerge(base.fingerprint || {}, input.fingerprint || {}));
+  const settings = deepMerge(fallbackSettings, deepMerge(base.settings || {}, input.settings || {}));
+  // CDP engine removed: migrate legacy 'cdp' / 'auto' / missing values to 'playwright'.
+  if (!settings.engine || settings.engine === 'auto' || settings.engine === 'cdp') {
+    settings.engine = 'playwright';
+  }
+  // Sync windowWidth/windowHeight from fingerprint.screenResolution for new profiles
+  // only when the caller did not explicitly provide window dimensions
+  if (isNewProfile && fingerprint.screenResolution && !input.settings?.windowWidth && !input.settings?.windowHeight) {
+    const parts = fingerprint.screenResolution.split('x');
+    if (parts.length === 2) {
+      const w = parseInt(parts[0], 10);
+      const h = parseInt(parts[1], 10);
+      if (w > 0 && h > 0) {
+        settings.windowWidth = w;
+        settings.windowHeight = h;
+      }
     }
   }
+
   const automation = deepMerge(DEFAULT_AUTOMATION, deepMerge(base.automation || {}, input.automation || {}));
   const active = (input.active != null) ? !!input.active : (base.active != null ? !!base.active : true);
   const id = input.id || base.id;
@@ -191,12 +212,34 @@ function makeUniqueName(desired, profiles, excludeId) {
   return base + ' (copy)';
 }
 
+function getCloneName(originalName, profiles, excludeId, prefix = '') {
+  let base = (originalName || '').trim();
+  while (/(?:\s*\(copy\)|\s*\(\d+\))+$/i.test(base)) {
+    base = base.replace(/(?:\s*\(copy\)|\s*\(\d+\))+$/i, '').trim();
+  }
+  const desired = prefix ? `${prefix} ${base}` : `${base} (copy)`;
+  return makeUniqueName(desired, profiles, excludeId);
+}
+
 function readProfiles() {
   try {
     const raw = fs.readFileSync(profilesFilePath(), 'utf8');
     if (!raw.trim()) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    // CDP engine removed — migrate legacy 'cdp' / 'auto' to 'playwright' on load.
+    let migrated = 0;
+    for (const p of parsed) {
+      if (p && p.settings && (p.settings.engine === 'cdp' || p.settings.engine === 'auto')) {
+        p.settings.engine = 'playwright';
+        migrated++;
+      }
+    }
+    if (migrated > 0) {
+      appendLog('system', `Migrated ${migrated} profile(s) from legacy engine to 'playwright'`);
+      writeProfiles(parsed);
+    }
+    return parsed;
   } catch (e) {
     appendLog('system', `readProfiles fallback (corrupt?): ${e.message}`);
     return [];
@@ -214,18 +257,18 @@ function withWriteLock(fn) {
 }
 
 function writeProfiles(list) {
-  // Fire-and-forget async write; returns immediately so callers don't block
-  withWriteLock(async () => {
+  return withWriteLock(async () => {
     try {
       const p = profilesFilePath();
       const tmp = p + '.tmp';
       await fs.promises.writeFile(tmp, JSON.stringify(list, null, 2));
       await fs.promises.rename(tmp, p);
+      return true;
     } catch (e) {
       appendLog('system', `writeProfiles error: ${e.message}`);
+      return false;
     }
   });
-  return true;
 }
 
 /**
@@ -272,7 +315,6 @@ async function saveProfileInternal(profile) {
     if (profile.id) {
       const idx = profiles.findIndex(p => p.id === profile.id);
       if (idx !== -1) {
-        // Updating existing profile - no license check needed
         const merged = normalizeProfileInput(profile, profiles[idx]);
         // Ensure unique name if changed
         if (merged.name && merged.name.trim().toLowerCase() !== (profiles[idx].name||'').trim().toLowerCase()) {
@@ -280,26 +322,19 @@ async function saveProfileInternal(profile) {
         }
         profiles[idx] = { ...profiles[idx], ...merged, updatedAt: nowIso };
       } else {
-        // Profile has ID but not found - creating new, check license limit
-        if (!isLicenseActivated() && profiles.length >= 5) {
-          return {
-            success: false,
-            error: 'Free plan giới hạn tối đa 5 profiles. Vui lòng kích hoạt license để tạo thêm profile.'
-          };
+        const licensed = isLicenseActivated();
+        if (!licensed && profiles.length >= 5) {
+          return { success: false, error: 'Free plan is limited to a maximum of 5 profiles. Please activate a license.' };
         }
         const prepared = normalizeProfileInput(profile, null);
         prepared.name = makeUniqueName(prepared.name, profiles, prepared.id);
         profiles.push({ ...prepared, createdAt: nowIso });
       }
     } else {
-      // New profile without ID - check license limit for free users
-      if (!isLicenseActivated() && profiles.length >= 5) {
-        return {
-          success: false,
-          error: 'Free plan giới hạn tối đa 5 profiles. Vui lòng kích hoạt license để tạo thêm profile.'
-        };
+      const licensed = isLicenseActivated();
+      if (!licensed && profiles.length >= 5) {
+        return { success: false, error: 'Free plan is limited to a maximum of 5 profiles. Please activate a license.' };
       }
-      
       let newId = generateShortId();
       // Ensure uniqueness just in case
       const existingIds = new Set((profiles || []).map(p => p.id));
@@ -309,7 +344,7 @@ async function saveProfileInternal(profile) {
       profiles.push({ ...prepared, createdAt: nowIso });
       profile.id = newId;
     }
-    const ok = writeProfiles(profiles);
+    const ok = await writeProfiles(profiles);
     if (!ok) return { success: false, error: 'Failed to persist profiles file' };
     appendLog('system', `Saved profile ${profile.id} (${profile.name})`);
     return { success: true, profile: profiles.find(p => p.id === profile.id) };
@@ -320,40 +355,32 @@ async function saveProfileInternal(profile) {
 }
 
 function generateShortId() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < 6; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-// Helper: Check if license is activated
-function isLicenseActivated() {
+  const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   try {
-    const licensePath = path.join(app.getPath('userData'), 'license.json');
-    if (!fs.existsSync(licensePath)) return false;
-    const licenseData = JSON.parse(fs.readFileSync(licensePath, 'utf8'));
-    return licenseData && licenseData.activated === true;
+    const bytes = crypto.randomBytes(6);
+    let result = '';
+    for (let i = 0; i < 6; i++) {
+      result += CHARS[bytes[i] % CHARS.length];
+    }
+    return result;
   } catch {
-    return false;
+    let result = '';
+    for (let i = 0; i < 6; i++) {
+      result += CHARS[Math.floor(Math.random() * CHARS.length)];
+    }
+    return result;
   }
 }
+
 async function deleteProfileInternal(profileId) {
   try {
     const profiles = readProfiles();
     const filtered = profiles.filter(p => p.id !== profileId);
-    const ok = writeProfiles(filtered);
+    const ok = await writeProfiles(filtered);
     try {
       const statePath = storageStatePath(profileId);
       if (fs.existsSync(statePath)) fs.unlinkSync(statePath);
     } catch (e) { appendLog(profileId, `Delete cleanup (storageState) failed: ${e.message}`); }
-    // Remove CDP user-data directory for this profile
-    try {
-      const cdpDir = path.join(getDataRoot(), 'cdp-user-data', String(profileId));
-      if (fs.existsSync(cdpDir)) {
-        fs.rmSync(cdpDir, { recursive: true, force: true });
-      }
-    } catch (e) { appendLog(profileId, `Delete cleanup (cdp-user-data) failed: ${e.message}`); }
     if (!ok) return { success: false, error: 'Failed to persist profiles file' };
     appendLog('system', `Deleted profile ${profileId}`);
     return { success: true };
@@ -365,6 +392,10 @@ async function deleteProfileInternal(profileId) {
 async function cloneProfileInternal(sourceProfileId, overrides = {}) {
   try {
     const profiles = readProfiles();
+    const licensed = isLicenseActivated();
+    if (!licensed && profiles.length >= 5) {
+      return { success: false, error: 'Free plan is limited to a maximum of 5 profiles. Please activate a license.' };
+    }
     const src = profiles.find(p => p.id === sourceProfileId);
     if (!src) return { success: false, error: 'Source profile not found' };
     let newId = generateShortId();
@@ -373,12 +404,12 @@ async function cloneProfileInternal(sourceProfileId, overrides = {}) {
     const cloned = safeDeepClone(src);
     // Reset identifiers and timestamps
     cloned.id = newId;
-    cloned.name = overrides.name || `${src.name} (copy)`;
+    cloned.name = overrides.name || getCloneName(src.name, profiles, newId);
     const nowIso = new Date().toISOString();
     cloned.createdAt = nowIso;
     delete cloned.updatedAt;
     profiles.push(cloned);
-    writeProfiles(profiles);
+    await writeProfiles(profiles);
     const srcState = storageStatePath(sourceProfileId);
     const dstState = storageStatePath(newId);
     try { if (fs.existsSync(srcState)) fs.copyFileSync(srcState, dstState); } catch (e) { appendLog(newId, `Failed copy storage state: ${e.message}`); }
@@ -393,10 +424,25 @@ function safeDeepClone(obj) {
   try { return JSON.parse(JSON.stringify(obj)); } catch { return { ...obj }; }
 }
 
+// Helper: Check if license is activated
+function isLicenseActivated() {
+  try {
+    const licensePath = path.join(app.getPath('userData'), 'license.json');
+    if (!fs.existsSync(licensePath)) return false;
+    const licenseData = JSON.parse(fs.readFileSync(licensePath, 'utf8'));
+    if (!licenseData?.activated || !licenseData?.key) return false;
+    // Trial expiry check (paid licenses have expiresAt = null)
+    if (licenseData.expiresAt && new Date(licenseData.expiresAt) < new Date()) return false;
+    const { deriveLicenseKey, getMachineCode } = require('../services/machineId');
+    const expected = deriveLicenseKey(getMachineCode());
+    return licenseData.key === expected;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Bulk create/update multiple profiles in a single file write.
- * @param {Array} inputProfiles - array of profile objects (with or without id)
- * @returns {{ success: boolean, profiles?: Array, errors?: Array, error?: string }}
  */
 async function saveProfilesBulkInternal(inputProfiles) {
   try {
@@ -426,7 +472,7 @@ async function saveProfilesBulkInternal(inputProfiles) {
       }
       const isUpdate = !!input.id && profiles.some(p => p.id === input.id);
       if (!isUpdate && !licensed && profiles.length >= 5) {
-        errors.push({ index: i, error: 'Free plan giới hạn tối đa 5 profiles. Vui lòng kích hoạt license.' });
+        errors.push({ index: i, error: 'Free plan is limited to a maximum of 5 profiles. Please activate a license.' });
         continue;
       }
       const validationErrors = validateProfileInputBasic(
@@ -457,9 +503,11 @@ async function saveProfilesBulkInternal(inputProfiles) {
     }
 
     if (created.length > 0) {
-      const ok = writeProfiles(profiles);
+      const ok = await writeProfiles(profiles);
       if (!ok) return { success: false, error: 'Failed to persist profiles file' };
       appendLog('system', `Bulk saved ${created.length} profile(s)`);
+    } else if (errors.length > 0) {
+      return { success: false, error: errors[0].error };
     }
 
     return { success: true, profiles: created, errors: errors.length ? errors : undefined };
@@ -471,8 +519,6 @@ async function saveProfilesBulkInternal(inputProfiles) {
 
 /**
  * Bulk delete multiple profiles by IDs in a single file write.
- * @param {Array<string>} ids - array of profile IDs to delete
- * @returns {{ success: boolean, deleted?: number, errors?: Array }}
  */
 async function deleteProfilesBulkInternal(ids) {
   try {
@@ -496,7 +542,7 @@ async function deleteProfilesBulkInternal(ids) {
     if (deleted.length > 0) {
       const deleteSet = new Set(deleted);
       const filtered = profiles.filter(p => !deleteSet.has(p.id));
-      const ok = writeProfiles(filtered);
+      const ok = await writeProfiles(filtered);
       if (!ok) return { success: false, error: 'Failed to persist profiles file' };
 
       // Cleanup storage state and CDP user data (non-blocking)
@@ -504,10 +550,6 @@ async function deleteProfilesBulkInternal(ids) {
         try {
           const statePath = storageStatePath(id);
           if (fs.existsSync(statePath)) fs.unlinkSync(statePath);
-        } catch { }
-        try {
-          const cdpDir = path.join(getDataRoot(), 'cdp-user-data', String(id));
-          if (fs.existsSync(cdpDir)) fs.rmSync(cdpDir, { recursive: true, force: true });
         } catch { }
       }
 
@@ -522,9 +564,6 @@ async function deleteProfilesBulkInternal(ids) {
 
 /**
  * Bulk clone multiple profiles by source IDs.
- * @param {Array<string>} sourceIds - array of source profile IDs
- * @param {object} [overrides] - optional overrides for all clones (e.g. { namePrefix })
- * @returns {{ success: boolean, profiles?: Array, errors?: Array }}
  */
 async function cloneProfilesBulkInternal(sourceIds, overrides = {}) {
   try {
@@ -537,11 +576,16 @@ async function cloneProfilesBulkInternal(sourceIds, overrides = {}) {
     }
 
     const profiles = readProfiles();
+    const licensed = isLicenseActivated();
     const nowIso = new Date().toISOString();
     const created = [];
     const errors = [];
 
     for (const srcId of sourceIds) {
+      if (!licensed && profiles.length >= 5) {
+        errors.push({ id: srcId, error: 'Free plan is limited to a maximum of 5 profiles. Please activate a license.' });
+        continue;
+      }
       const src = profiles.find(p => p.id === srcId);
       if (!src) {
         errors.push({ id: srcId, error: 'Source profile not found' });
@@ -552,7 +596,7 @@ async function cloneProfilesBulkInternal(sourceIds, overrides = {}) {
       while (existingIds.has(newId)) newId = generateShortId();
       const cloned = safeDeepClone(src);
       cloned.id = newId;
-      cloned.name = makeUniqueName(overrides.namePrefix ? `${overrides.namePrefix} ${src.name}` : `${src.name} (copy)`, profiles, newId);
+      cloned.name = getCloneName(src.name, profiles, newId, overrides.namePrefix);
       cloned.createdAt = nowIso;
       delete cloned.updatedAt;
       profiles.push(cloned);
@@ -567,8 +611,10 @@ async function cloneProfilesBulkInternal(sourceIds, overrides = {}) {
     }
 
     if (created.length > 0) {
-      writeProfiles(profiles);
+      await writeProfiles(profiles);
       appendLog('system', `Bulk cloned ${created.length} profile(s)`);
+    } else if (errors.length > 0) {
+      return { success: false, error: errors[0].error };
     }
 
     return { success: true, profiles: created, errors: errors.length ? errors : undefined };

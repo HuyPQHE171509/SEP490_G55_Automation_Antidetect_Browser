@@ -14,20 +14,25 @@ export default function AppLogsTab({ logs = [], onClear }) {
 
     const handleClear = () => onClear?.();
 
+    const LEVEL_RANK = { 'TRC': 0, 'DBG': 1, 'INF': 2, 'WRN': 3, 'ERR': 4 };
+
     const getLevelColor = (level) => {
         switch (level) {
+            case 'TRC': return 'text-slate-400 font-semibold';
+            case 'DBG': return 'text-slate-500 font-semibold';
             case 'INF': return 'text-blue-500 font-semibold';
             case 'WRN': return 'text-amber-500 font-semibold';
             case 'ERR': return 'text-red-500 font-semibold';
-            case 'DBG': return 'text-slate-500 font-semibold';
             default: return 'text-slate-600 font-semibold';
         }
     };
 
+    const FILTER_MIN_RANK = { 'All': -1, 'Trace+': 0, 'Debug+': 1, 'Info+': 2, 'Warn+': 3, 'Error+': 4 };
+
     const filteredLogs = logs.filter(log => {
-        if (levelFilter === 'Warn+' && !['ERR', 'WRN'].includes(log.level)) return false;
-        if (levelFilter === 'Error+' && log.level !== 'ERR') return false;
-        return true;
+        const minRank = FILTER_MIN_RANK[levelFilter] ?? -1;
+        if (minRank < 0) return true;
+        return (LEVEL_RANK[log.level] ?? 2) >= minRank;
     });
 
     return (
@@ -36,8 +41,8 @@ export default function AppLogsTab({ logs = [], onClear }) {
             
             <div className="flex-1 rounded-xl flex flex-col overflow-hidden" style={{ background: 'var(--card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
                 {/* Header Toolbar */}
-                <div className="flex justify-between items-center px-3 py-2" style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)' }}>
-                    <div className="flex items-center gap-4">
+                <div className="flex flex-wrap justify-between items-center gap-2 px-3 py-2" style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)' }}>
+                    <div className="flex items-center gap-3 flex-wrap">
                         <div className="relative">
                             <select 
                                 value={levelFilter}
@@ -46,6 +51,9 @@ export default function AppLogsTab({ logs = [], onClear }) {
                                 style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
                             >
                                 <option>All</option>
+                                <option>Trace+</option>
+                                <option>Debug+</option>
+                                <option>Info+</option>
                                 <option>Warn+</option>
                                 <option>Error+</option>
                             </select>

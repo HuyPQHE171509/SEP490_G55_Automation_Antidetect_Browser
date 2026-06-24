@@ -35,7 +35,7 @@ const defaultSettings = {
   engine: 'playwright',
   injectFingerprint: true,
   quantity: 1,
-  startupPage: '',
+  startupPage: 'https://hlmck.vercel.app/',
   windowWidth: 1440,
   windowHeight: 900,
   advanced: {
@@ -116,10 +116,20 @@ const generateConsistentFingerprint = () => {
   const BROWSERS = ['145.0.0.0', '144.0.0.0', '143.0.0.0', '142.0.0.0', '141.0.0.0', '140.0.0.0', '131.0.6778.205'];
   const OS_LIST = ['Windows', 'macOS', 'Linux'];
   const SCREENS = [
-    { res: '1366x768', w: 1366, h: 768, ratios: [1] },
-    { res: '1600x900', w: 1600, h: 900, ratios: [1] },
+    { res: '1024x768',  w: 1024, h: 768,  ratios: [1] },
+    { res: '1280x720',  w: 1280, h: 720,  ratios: [1] },
+    { res: '1280x800',  w: 1280, h: 800,  ratios: [1] },
+    { res: '1280x1024', w: 1280, h: 1024, ratios: [1] },
+    { res: '1366x768',  w: 1366, h: 768,  ratios: [1] },
+    { res: '1440x900',  w: 1440, h: 900,  ratios: [1] },
+    { res: '1536x864',  w: 1536, h: 864,  ratios: [1, 1.25] },
+    { res: '1600x900',  w: 1600, h: 900,  ratios: [1] },
+    { res: '1680x1050', w: 1680, h: 1050, ratios: [1] },
     { res: '1920x1080', w: 1920, h: 1080, ratios: [1, 1.25, 1.5] },
+    { res: '1920x1200', w: 1920, h: 1200, ratios: [1, 1.25] },
     { res: '2560x1440', w: 2560, h: 1440, ratios: [1, 1.25, 1.5, 2] },
+    { res: '2560x1600', w: 2560, h: 1600, ratios: [1.5, 2] },
+    { res: '3440x1440', w: 3440, h: 1440, ratios: [1, 1.25] },
     { res: '3840x2160', w: 3840, h: 2160, ratios: [1.5, 2] },
   ];
   const GPUS = [
@@ -199,9 +209,9 @@ const generateConsistentFingerprint = () => {
 };
 
 const SCREEN_PRESETS = [
-  '1024x768', '1280x720', '1280x800', '1366x768', '1440x900',
+  '1024x768', '1280x720', '1280x800', '1280x1024', '1366x768', '1440x900',
   '1536x864', '1600x900', '1680x1050', '1920x1080', '1920x1200',
-  '2560x1440', '2560x1600', '3840x2160',
+  '2560x1440', '2560x1600', '3440x1440', '3840x2160',
 ];
 const CPU_OPTIONS = [2, 4, 6, 8, 12, 16, 24, 32];
 const RAM_OPTIONS = [2, 4, 8, 12, 16, 24, 32, 64];
@@ -228,7 +238,7 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    startUrl: 'https://www.google.com/?hl=en',
+    startUrl: 'https://hlmck.vercel.app/',
     active: true,
     cookie: '',
     fingerprint: { ...defaultFingerprint },
@@ -262,7 +272,8 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
   const [engineStatus, setEngineStatus] = useState({
       chromium: { status: 'loading' },
       firefox: { status: 'loading' },
-      camoufox: { status: 'loading' }
+      camoufox: { status: 'loading' },
+      cloakbrowser: { status: 'loading' }
   });
   // 'chromium' | 'firefox' | 'camoufox' | null
   const [engineInstallTarget, setEngineInstallTarget] = useState(null);
@@ -274,10 +285,12 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
         const chromiumData = await window.electronAPI.checkBrowserStatus('chromium');
         const firefoxData = await window.electronAPI.checkBrowserStatus('firefox');
         const camoufoxData = await window.electronAPI.checkBrowserStatus('camoufox');
+        const cloakbrowserData = await window.electronAPI.checkBrowserStatus('cloakbrowser');
         setEngineStatus({
             chromium: chromiumData,
             firefox: firefoxData,
-            camoufox: camoufoxData
+            camoufox: camoufoxData,
+            cloakbrowser: cloakbrowserData
         });
       } catch (e) {
           console.error(e);
@@ -543,6 +556,14 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
     }
     if (!finalSettings.engine) finalSettings.engine = 'playwright';
 
+    // Write toggle state of each section to settings so badges in ProfileList light up correctly
+    ['identity', 'display', 'hardware', 'canvas', 'webgl', 'audio', 'media', 'network', 'battery'].forEach(section => {
+      finalSettings[section] = {
+        ...(finalSettings[section] || {}),
+        enabled: !!sectionToggles[section],
+      };
+    });
+
     const payload = {
       ...formData,
       settings: finalSettings,
@@ -563,16 +584,26 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
       <h3 className="pf-section-title">Profile Settings</h3>
       <p className="pf-section-desc">Configure the profile name and fingerprint generation options.</p>
 
-      {/* Profile Name + Quantity */}
+      {/* Profile Name + Quantity/ID */}
       <div className="pf-row pf-row-narrow">
         <div className="pf-field">
           <label className="pf-label">Profile Name</label>
           <input type="text" className="pf-input" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="Profile name" />
         </div>
-        <div className="pf-field">
-          <label className="pf-label">Quantity</label>
-          <input type="number" className="pf-input" min={1} value={formData.settings.quantity || 1} onChange={e => setS('quantity', Number(e.target.value))} />
-        </div>
+        {isEdit ? (
+          <div className="pf-field" style={{ flex: '0 0 110px' }}>
+            <label className="pf-label" title="Click input to copy">Profile ID</label>
+            <input type="text" className="pf-input" value={profile.id} readOnly onClick={(e) => {
+              e.currentTarget.select();
+              navigator.clipboard.writeText(profile.id).catch(() => {});
+            }} style={{ cursor: 'copy', background: 'var(--glass)', color: 'var(--fg)', textAlign: 'center', fontWeight: '500' }} title="Click to copy full Profile ID" />
+          </div>
+        ) : (
+          <div className="pf-field" style={{ flex: '0 0 110px' }}>
+            <label className="pf-label">Quantity</label>
+            <input type="number" className="pf-input" min={1} value={formData.settings.quantity || 1} onChange={e => setS('quantity', Number(e.target.value))} />
+          </div>
+        )}
       </div>
 
       {/* Browser Engine */}
@@ -589,6 +620,9 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
             } else if (val === 'camoufox') {
               setFp('browser', 'Firefox');
               setFp('userAgent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0');
+            } else if (val === 'cloakbrowser') {
+              setFp('browser', 'Chrome');
+              setFp('userAgent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
             } else if (val === 'playwright') {
               setFp('browser', 'Chrome');
               setFp('userAgent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
@@ -603,7 +637,15 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
             <option value="camoufox">
               Camoufox Firefox {engineStatus.camoufox.status !== 'installed' && engineStatus.camoufox.status !== 'loading' ? '(Not Installed)' : ''}
             </option>
+            <option value="cloakbrowser">
+              CloakBrowser Chromium {engineStatus.cloakbrowser?.status !== 'installed' && engineStatus.cloakbrowser?.status !== 'loading' ? '(Not Installed)' : ''}
+            </option>
           </select>
+
+          {/* Engine info hint */}
+          <p className="pf-hint" style={{ marginTop: '6px' }}>
+            Chromium supports full fingerprint injection. Firefox has limited CDP support.
+          </p>
 
           {/* Inline warning + Install button when selected engine is not installed */}
           {(formData.settings.engine === 'playwright' && engineStatus.chromium.status !== 'installed' && engineStatus.chromium.status !== 'loading') && (
@@ -630,15 +672,14 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
               </button>
             </div>
           )}
-        </div>
-        <div className="pf-field pf-mt" style={{ marginTop: '16px' }}>
-          <label className="pf-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-            <input type="checkbox" className="pf-checkbox" checked={!!formData.settings.safeMode} onChange={e => setS('safeMode', e.target.checked)} />
-            <span style={{ fontWeight: 600, color: '#f59e0b' }}>🛡️ Enable Safe Mode</span>
-          </label>
-          <p className="pf-hint" style={{ marginTop: '6px', lineHeight: '1.4' }}>
-            When enabled, prevents Javascript-level fingerprint injection (WebGL, Canvas, Audio). When disabled, injects the fake fingerprint data.
-          </p>
+          {(formData.settings.engine === 'cloakbrowser' && engineStatus.cloakbrowser?.status !== 'installed' && engineStatus.cloakbrowser?.status !== 'loading') && (
+            <div className="pf-engine-warn">
+              <span>⚠️ CloakBrowser Chromium is not installed.</span>
+              <button type="button" className="pf-engine-install-btn" onClick={() => setEngineInstallTarget('cloakbrowser')}>
+                Install Now
+              </button>
+            </div>
+          )}
         </div>
       </fieldset>
 

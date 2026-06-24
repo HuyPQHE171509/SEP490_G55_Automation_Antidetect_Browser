@@ -280,10 +280,7 @@ const messages = {
     'automation.section': 'Tự động hoá',
     'automation.enabled': 'Bật tự động hoá',
     'automation.runOnLaunch': 'Chạy steps sau khi launch',
-    'automation.schedule': 'Lịch (cron)',
-    'automation.schedule.enabled': 'Bật lịch lặp lại',
     'automation.steps': 'Steps (JSON)',
-    'automation.hint.schedule': 'Biểu thức cron 5 phần, ví dụ: */5 * * * * (mỗi 5 phút). Để trống nếu không dùng.',
     'automation.hint.steps': 'Mảng JSON các steps: navigate|wait|eval. Ví dụ: [{"action":"navigate","url":"https://example.com"}]',
 
     // Proxies
@@ -318,6 +315,24 @@ const messages = {
     'proxies.import.placeholder': '192.168.1.1:8080\\n10.0.0.1:3128:user:pass',
     'proxies.import.btn': 'Nhập',
     'proxies.delete.confirm': 'Bạn có chắc chắn muốn xóa proxy này không?',
+
+    // License
+    'license.getStarted': 'Bắt đầu sử dụng',
+    'license.desc': 'Dùng <strong className="font-semibold text-[var(--fg)]">Free</strong> (tối đa 5 profiles) hoặc nhập key PRO để mở khóa toàn bộ tính năng.',
+    'license.buyPro': '⚡ Mua Pro License →',
+    'license.orEnterKey': 'hoặc nhập key đã mua',
+    'license.checking': 'Đang kiểm tra...',
+    'license.activateBtn': 'Kích hoạt License',
+    'license.continueFree': 'Tiếp tục dùng Free (5 profiles)',
+    'license.error.empty': 'Vui lòng nhập license key.',
+    'license.error.invalid': 'License key không hợp lệ với máy này.',
+    'license.error.system': 'Đã xảy ra lỗi. Thử lại sau.',
+    'license.status.licensed': 'Đã kích hoạt ✔',
+    'license.status.notLicensed': 'Chưa kích hoạt',
+    'license.status.activated': 'Đã kích hoạt. Không giới hạn profiles.',
+    'license.deactivateBtn': 'Hủy kích hoạt',
+    'license.status.noKey': 'Chưa cấu hình license key',
+    'license.status.freePlan': 'Gói Free: tối đa 5 profiles.',
   },
   en: {
     'app.title': 'HL-MCK Automation Antidetect Browser',
@@ -598,10 +613,7 @@ const messages = {
     'automation.section': 'Automation',
     'automation.enabled': 'Enable automation',
     'automation.runOnLaunch': 'Run steps after launch',
-    'automation.schedule': 'Schedule (cron)',
-    'automation.schedule.enabled': 'Enable recurring schedule',
     'automation.steps': 'Steps (JSON)',
-    'automation.hint.schedule': 'Cron expression (5 fields), e.g. */5 * * * * (every 5 min). Leave blank if not used.',
     'automation.hint.steps': 'JSON array of steps: navigate|wait|eval. Example: [{"action":"navigate","url":"https://example.com"}]',
 
     // Proxies
@@ -636,24 +648,33 @@ const messages = {
     'proxies.import.placeholder': '192.168.1.1:8080\\n10.0.0.1:3128:user:pass',
     'proxies.import.btn': 'Import',
     'proxies.delete.confirm': 'Are you sure you want to delete this proxy?',
+
+    // License
+    'license.getStarted': 'Get Started',
+    'license.desc': 'Use <strong className="font-semibold text-[var(--fg)]">Free</strong> (max 5 profiles) or enter a PRO key to unlock all features.',
+    'license.buyPro': '⚡ Buy Pro License →',
+    'license.orEnterKey': 'or enter purchased key',
+    'license.checking': 'Checking...',
+    'license.activateBtn': 'Activate License',
+    'license.continueFree': 'Continue Free (5 profiles)',
+    'license.error.empty': 'Please enter a license key.',
+    'license.error.invalid': 'Invalid license key for this machine.',
+    'license.error.system': 'An error occurred. Please try again later.',
+    'license.status.licensed': 'Licensed ✔',
+    'license.status.notLicensed': 'Not licensed',
+    'license.status.activated': 'Activated. Unlimited profiles.',
+    'license.deactivateBtn': 'Deactivate License',
+    'license.status.noKey': 'No license key configured',
+    'license.status.freePlan': 'Free plan: up to 5 profiles.',
   }
 };
 
 const I18nContext = createContext({ lang: 'en', setLang: () => { }, t: (k, d) => d || k });
 
 export function I18nProvider({ children }) {
-  const [lang, setLang] = useState('en');
+  const [lang, setLang] = useState('en'); // Locked to English
 
-  // Load persisted language from settings
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await window.electronAPI?.loadSettings?.();
-        const stored = res?.success ? (res.settings?.language || res.settings?.appLanguage) : null;
-        if (stored && (stored === 'vi' || stored === 'en')) setLang(stored);
-      } catch { }
-    })();
-  }, []);
+  // Language is locked to English - no persistence load needed
 
   // Persist on change and update <html lang>
   useEffect(() => {
@@ -663,7 +684,7 @@ export function I18nProvider({ children }) {
 
   const t = useMemo(() => {
     return (key, def) => {
-      const dict = messages[lang] || messages.vi;
+      const dict = messages[lang] || messages.en;
       return (dict && dict[key]) || def || key;
     };
   }, [lang]);

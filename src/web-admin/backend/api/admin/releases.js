@@ -19,6 +19,7 @@ import multer from 'multer';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '../../.data');
 const RELEASES_FILE = join(DATA_DIR, 'releases.json');
+const CONFIG_FILE = join(DATA_DIR, 'config.json');
 const UPLOAD_DIR = join(__dirname, '../../uploads/releases');
 
 const MAX_FILE_BYTES = 500 * 1024 * 1024; // 500 MB
@@ -52,6 +53,29 @@ function loadReleases() {
 function saveReleases(list) {
   ensureDirs();
   writeFileSync(RELEASES_FILE, JSON.stringify(list, null, 2), 'utf8');
+}
+
+// Đồng bộ appVersion trong config.json sang version của release vừa upload nếu
+// nó mới hơn — để trang Landing (/api/download/info) luôn hiển version mới nhất.
+function syncAppVersion(version) {
+  try {
+    ensureDirs();
+    const config = existsSync(CONFIG_FILE)
+      ? JSON.parse(readFileSync(CONFIG_FILE, 'utf8'))
+      : {};
+    const [nMaj, nMin, nPat] = parseSemver(version);
+    const [cMaj, cMin, cPat] = parseSemver(config.appVersion || '0.0.0');
+    const isNewer =
+      nMaj > cMaj ||
+      (nMaj === cMaj && nMin > cMin) ||
+      (nMaj === cMaj && nMin === cMin && nPat > cPat);
+    if (isNewer) {
+      config.appVersion = version;
+      writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+    }
+  } catch (e) {
+    console.warn('[releases] syncAppVersion failed:', e?.message);
+  }
 }
 
 function sha256OfFile(filePath) {
@@ -106,7 +130,7 @@ export const uploadMiddleware = upload.single('file');
 export function listReleases(_req, res) {
   const releases = loadReleases()
     .slice()
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    .sort(compareSemver);
   res.status(200).json({ releases });
 }
 
@@ -146,6 +170,7 @@ export async function createRelease(req, res) {
     const all = loadReleases();
     all.push(entry);
     saveReleases(all);
+    syncAppVersion(version);
 
     console.log(`[releases] uploaded ${entry.version} (${platform}) ${entry.fileName} — ${Math.round(size / 1024 / 1024)}MB by ${entry.uploadedBy}`);
     res.status(201).json(entry);
@@ -178,10 +203,25 @@ export function findReleaseById(id) {
   return loadReleases().find((r) => r.id === id) || null;
 }
 
+function parseSemver(v) {
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(v || '0.0.0'));
+  return m ? [parseInt(m[1]), parseInt(m[2]), parseInt(m[3])] : [0, 0, 0];
+}
+
+function compareSemver(a, b) {
+  const [aMaj, aMin, aPat] = parseSemver(a.version);
+  const [bMaj, bMin, bPat] = parseSemver(b.version);
+  if (bMaj !== aMaj) return bMaj - aMaj;
+  if (bMin !== aMin) return bMin - aMin;
+  if (bPat !== aPat) return bPat - aPat;
+  // Tie-break by upload date
+  return new Date(b.createdAt) - new Date(a.createdAt);
+}
+
 export function findLatestRelease(platform) {
   const all = loadReleases()
     .filter((r) => !platform || r.platform === platform)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    .sort(compareSemver);
   return all[0] || null;
 }
 

@@ -7,6 +7,9 @@ import activateLicense from '../api/activate-license.js';
 import userStatus from '../api/user-status.js';
 import myLicense from '../api/my-license.js';
 import requestTrial from '../api/request-trial.js';
+import verifyMachine from '../api/verify-machine.js';
+import deactivateMachine from '../api/deactivate-machine.js';
+import reactivateMachine from '../api/reactivate-machine.js';
 import { downloadRedirect, downloadStats, downloadInfo } from '../api/download.js';
 import adminConfig from '../api/admin/config.js';
 import adminStats from '../api/admin/stats.js';
@@ -23,6 +26,15 @@ import {
   uploadMiddleware,
 } from '../api/admin/releases.js';
 import { getLatestRelease, downloadRelease } from '../api/releases.js';
+import { serveUpdateFile } from '../api/updates.js';
+import {
+  uploadUpdatesMiddleware,
+  listUpdateFiles,
+  createUpdateFiles,
+  deleteUpdateFile,
+} from '../api/admin/updates.js';
+import { listGithubReleases, publishGithubRelease } from '../api/admin/githubReleases.js';
+import statusHandler from '../api/status.js';
 
 const app = express();
 const PORT = 3001;
@@ -30,6 +42,7 @@ const PORT = 3001;
 app.use(express.json());
 
 // ── Public API routes ─────────────────────────────────────────────────────────
+app.get('/api/status', statusHandler);
 app.post('/api/create-payment', createPayment);
 app.get('/api/get-order', getOrder);
 app.post('/api/payos-webhook', payosWebhook);
@@ -38,6 +51,9 @@ app.post('/api/activate-license', activateLicense);
 app.get('/api/user-status', userStatus);
 app.post('/api/my-license', myLicense);
 app.post('/api/request-trial', requestTrial);
+app.post('/api/verify-machine', verifyMachine);
+app.post('/api/deactivate-machine', deactivateMachine);
+app.post('/api/reactivate-machine', reactivateMachine);
 
 // Download tracking + redirect
 app.get('/api/download/info', downloadInfo);
@@ -47,6 +63,9 @@ app.get('/api/download/:platform', downloadRedirect);
 // Self-hosted releases (public reads, admin/token writes)
 app.get('/api/releases/latest', getLatestRelease);
 app.get('/api/releases/:id/download', downloadRelease);
+
+// electron-updater feed (public reads; hỗ trợ Range cho delta download)
+app.get('/api/updates/:file', serveUpdateFile);
 
 // ── Admin API routes (bearer token required) ──────────────────────────────────
 app.get('/api/admin/stats', requireAdmin, adminStats);
@@ -64,6 +83,15 @@ app.post('/api/admin/config', requireAdmin, adminConfig);
 app.get('/api/admin/releases', requireAdminOrUploadToken, listReleases);
 app.post('/api/admin/releases', requireAdminOrUploadToken, uploadMiddleware, createRelease);
 app.delete('/api/admin/releases/:id', requireAdminOrUploadToken, deleteRelease);
+
+// Update-feed management (latest.yml + installer + blockmap cho electron-updater)
+app.get('/api/admin/updates', requireAdminOrUploadToken, listUpdateFiles);
+app.post('/api/admin/updates', requireAdminOrUploadToken, uploadUpdatesMiddleware, createUpdateFiles);
+app.delete('/api/admin/updates/:file', requireAdminOrUploadToken, deleteUpdateFile);
+
+// GitHub Releases feed (gate B): liệt kê draft/published + phát hành draft thành latest
+app.get('/api/admin/github-releases', requireAdmin, listGithubReleases);
+app.post('/api/admin/github-releases/:id/publish', requireAdmin, publishGithubRelease);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 const server = app.listen(PORT, () => {

@@ -38,6 +38,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   removeAllProfilesUpdated: () => ipcRenderer.removeAllListeners('profiles-updated'),
 
+  onProxiesUpdated: (callback) => {
+    const listener = () => callback && callback();
+    ipcRenderer.on('proxies-updated', listener);
+    return () => ipcRenderer.removeListener('proxies-updated', listener);
+  },
+  removeAllProxiesUpdated: () => ipcRenderer.removeAllListeners('proxies-updated'),
+
+  onScriptsUpdated: (callback) => {
+    const listener = () => callback && callback();
+    ipcRenderer.on('scripts-updated', listener);
+    return () => ipcRenderer.removeListener('scripts-updated', listener);
+  },
+  removeAllScriptsUpdated: () => ipcRenderer.removeAllListeners('scripts-updated'),
+
+  onTaskLogsUpdated: (callback) => {
+    const listener = () => callback && callback();
+    ipcRenderer.on('task-logs-updated', listener);
+    return () => ipcRenderer.removeListener('task-logs-updated', listener);
+  },
+  removeAllTaskLogsUpdated: () => ipcRenderer.removeAllListeners('task-logs-updated'),
+
   // Open external links in default browser (via main)
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
@@ -66,6 +87,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Machine License
   getMachineCode: () => ipcRenderer.invoke('get-machine-code'),
   validateLicense: (key) => ipcRenderer.invoke('validate-license', key),
+  deactivateLicense: () => ipcRenderer.invoke('deactivate-license'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
   // Scripts
@@ -78,10 +100,47 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pauseScript: (profileId) => ipcRenderer.invoke('script-pause', profileId),
   resumeScript: (profileId) => ipcRenderer.invoke('script-resume', profileId),
   isScriptRunning: (profileId) => ipcRenderer.invoke('script-is-running', profileId),
+  // Bug #5 fix: validate cron expression via main process (uses node-cron.validate)
+  validateCron: (expr) => ipcRenderer.invoke('validate-cron', expr),
+  // Bug #6 fix: manually trigger a scheduled script immediately ("Test Run Now")
+  scriptRunNow: (scriptId) => ipcRenderer.invoke('script-run-now', scriptId),
+  // Inspect Fingerprint: read live fingerprint values from a running browser profile
+  inspectFingerprint: (profileId) => ipcRenderer.invoke('profile-inspect-fingerprint', profileId),
+
+  // Element Picker: điều khiển browser từ picker panel
+  elementPickerGetUrl: (profileId) => ipcRenderer.invoke('element-picker:get-url', profileId),
+  elementPickerNavigate: (profileId, url) => ipcRenderer.invoke('element-picker:navigate', profileId, url),
+  elementPickerBringToFront: (profileId) => ipcRenderer.invoke('element-picker:bring-to-front', profileId),
+  elementPickerStartPicking: (profileId) => ipcRenderer.invoke('element-picker:start-picking', profileId),
+  elementPickerStopPicking: (profileId) => ipcRenderer.invoke('element-picker:stop-picking', profileId),
+  elementPickerGetInfo: (profileId, selector) => ipcRenderer.invoke('element-picker:get-element-info', profileId, selector),
+  elementPickerAction: (profileId, action, ...args) => ipcRenderer.invoke('element-picker:action', profileId, action, ...args),
+  onSelectorPicked: (callback) => {
+    const listener = (_e, data) => callback(data);
+    ipcRenderer.on('element-picker:selector-picked', listener);
+    return () => ipcRenderer.removeListener('element-picker:selector-picked', listener);
+  },
+  // Macros
+  listMacros: () => ipcRenderer.invoke('macro-list'),
+  getMacro: (id) => ipcRenderer.invoke('macro-get', id),
+  saveMacro: (macro) => ipcRenderer.invoke('macro-save', macro),
+  deleteMacro: (id) => ipcRenderer.invoke('macro-delete', id),
+  runMacro: (macroId, profileId) => ipcRenderer.invoke('macro-run', macroId, profileId),
+  stopMacro: (profileId) => ipcRenderer.invoke('macro-stop', profileId), // Bug #3 fix: dừng giữa chừng
+  startMacroRecord: (profileId) => ipcRenderer.invoke('macro-record-start', profileId),
+  stopMacroRecord: (profileId) => ipcRenderer.invoke('macro-record-stop', profileId),
+  onMacroRecordStep: (callback) => {
+    const listener = (_e, data) => callback(data);
+    ipcRenderer.on('macro:record-step', listener);
+    return () => ipcRenderer.removeListener('macro:record-step', listener);
+  },
+  removeAllMacroRecordStep: () => ipcRenderer.removeAllListeners('macro:record-step'),
+
   getTaskLogs: () => ipcRenderer.invoke('task-logs-list'),
   getTaskLog: (id) => ipcRenderer.invoke('task-logs-get', id),
   deleteTaskLog: (id) => ipcRenderer.invoke('task-logs-delete', id),
   clearTaskLogs: () => ipcRenderer.invoke('task-logs-clear'),
+  runTask: (taskId) => ipcRenderer.invoke('task-run', taskId),
 
   // Proxy management
   getProxies: () => ipcRenderer.invoke('proxy-get-all'),
@@ -137,4 +196,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startPreview: (profileId) => ipcRenderer.invoke('start-preview', profileId),
   stopPreview: (profileId) => ipcRenderer.invoke('stop-preview', profileId),
   getScreencastStatus: (profileId) => ipcRenderer.invoke('screencast-status', profileId),
+
+  // Audit Log (Ethical Compliance)
+  exportAuditLog: () => ipcRenderer.invoke('system-export-audit'),
+
+  // ── Auto-update ─────────────────────────────────────────────────────────────
+  checkForUpdate: () => ipcRenderer.invoke('update:check'),
+  installUpdate: (release) => ipcRenderer.invoke('update:install', release),
+  onUpdateProgress: (callback) => {
+    const listener = (_e, payload) => callback && callback(payload);
+    ipcRenderer.on('update-progress', listener);
+    return () => ipcRenderer.removeListener('update-progress', listener);
+  },
+  removeAllUpdateProgress: () => ipcRenderer.removeAllListeners('update-progress'),
+  onUpdateAvailable: (callback) => {
+    const listener = (_e, payload) => callback && callback(payload);
+    ipcRenderer.on('update-available', listener);
+    return () => ipcRenderer.removeListener('update-available', listener);
+  },
 });

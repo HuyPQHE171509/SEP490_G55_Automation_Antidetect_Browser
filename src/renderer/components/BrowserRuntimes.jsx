@@ -6,23 +6,27 @@ export default function BrowserRuntimes() {
     const [browsers, setBrowsers] = useState({
         chromium: { status: 'loading', path: null, version: null, size: null },
         firefox: { status: 'loading', path: null, version: null, size: null },
-        camoufox: { status: 'loading', path: null, version: null, size: null }
+        camoufox: { status: 'loading', path: null, version: null, size: null },
+        cloakbrowser: { status: 'loading', path: null, version: null, size: null }
     });
 
     const [installing, setInstalling] = useState({
         chromium: false,
         firefox: false,
-        camoufox: false
+        camoufox: false,
+        cloakbrowser: false
     });
     const [progressLogs, setProgressLogs] = useState({
         chromium: '',
         firefox: '',
-        camoufox: ''
+        camoufox: '',
+        cloakbrowser: ''
     });
     const [progressPercent, setProgressPercent] = useState({
         chromium: null,
         firefox: null,
-        camoufox: null
+        camoufox: null,
+        cloakbrowser: null
     });
 
     useEffect(() => {
@@ -48,22 +52,26 @@ export default function BrowserRuntimes() {
             const chromiumData = await window.electronAPI.checkBrowserStatus('chromium');
             const firefoxData = await window.electronAPI.checkBrowserStatus('firefox');
             const camoufoxData = await window.electronAPI.checkBrowserStatus('camoufox');
+            const cloakbrowserData = await window.electronAPI.checkBrowserStatus('cloakbrowser');
             setBrowsers({
                 chromium: chromiumData,
                 firefox: firefoxData,
-                camoufox: camoufoxData
+                camoufox: camoufoxData,
+                cloakbrowser: cloakbrowserData
             });
 
             // Restore installing states
             setInstalling({
                 chromium: !!chromiumData.isInstalling,
                 firefox: !!firefoxData.isInstalling,
-                camoufox: !!camoufoxData.isInstalling
+                camoufox: !!camoufoxData.isInstalling,
+                cloakbrowser: !!cloakbrowserData.isInstalling
             });
             setProgressLogs({
                 chromium: chromiumData.lastLog || '',
                 firefox: firefoxData.lastLog || '',
-                camoufox: camoufoxData.lastLog || ''
+                camoufox: camoufoxData.lastLog || '',
+                cloakbrowser: cloakbrowserData.lastLog || ''
             });
         } catch (e) {
             console.error("Failed to load browser status", e);
@@ -152,7 +160,7 @@ export default function BrowserRuntimes() {
                     <div className="d-flex justify-content-between align-items-start mb-3">
                         <div className="d-flex align-items-center gap-3">
                             <div className={`browser-icon-container ${iconClass}`}>
-                                {name === 'chromium' ? (
+                                {name === 'chromium' || name === 'cloakbrowser' ? (
                                     <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor">
                                         <path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,6.46C15.06,6.46 17.54,8.94 17.54,12C17.54,15.06 15.06,17.54 12,17.54C8.94,17.54 6.46,15.06 6.46,12C6.46,8.94 8.94,6.46 12,6.46Z" />
                                     </svg>
@@ -249,6 +257,7 @@ export default function BrowserRuntimes() {
                     {renderCard('chromium', 'Playwright Chromium', 'text-emerald-500', 'High-performance engine built on Chrome architecture. Recommended for 90% of profiles.')}
                     {renderCard('firefox', 'Playwright Firefox', 'text-amber-500', 'Isolated Mozilla engine. Excellent for deeply obfuscating hardware fingerprints.')}
                     {renderCard('camoufox', 'Camoufox Firefox', 'text-purple-500', 'Patched Firefox fork with built-in fingerprint spoofing — canvas, WebGL, fonts, hardware. Better antidetect than plain Firefox.')}
+                    {renderCard('cloakbrowser', 'CloakBrowser', 'text-cyan-500', 'Chromium engine with built-in fingerprint patches. No CDP injection needed.')}
                 </div>
             </div>
         </div>

@@ -13,6 +13,7 @@ import LicenseModal from './components/LicenseModal';
 import EngineInstallModal from './components/EngineInstallModal';
 import LinkProxyModal from './components/LinkProxyModal';
 import LivePreviewPanel from './components/LivePreviewPanel';
+import MacroManager from './components/MacroManager';
 import './App.css';
 import { useI18n } from './i18n/index';
  
@@ -44,6 +45,61 @@ function App() {
   const [appLogs, setAppLogs] = useState([]);
   // Live preview: profile being previewed (or null)
   const [previewProfile, setPreviewProfile] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // { profileId, profileName }
+  const [deleteBulkConfirm, setDeleteBulkConfirm] = useState(null); // { ids, runningCount }
+
+  // Auto-update
+  const [updateInfo, setUpdateInfo] = useState(null);       // release object khi có bản mới
+  const [updatePhase, setUpdatePhase] = useState(null);     // 'downloading' | 'downloaded' | 'installing'
+  const [updateProgress, setUpdateProgress] = useState(0);  // 0–1
+
+  // Kiểm tra bản cập nhật khi app khởi động xong
+  useEffect(() => {
+    if (!window.electronAPI?.checkForUpdate) return;
+    const runCheck = async () => {
+      try {
+        const result = await window.electronAPI.checkForUpdate();
+        if (result?.hasUpdate && result?.release) {
+          setUpdateInfo(result.release);
+        }
+      } catch {}
+    };
+
+    // Đợi 5 giây sau khi load để tránh làm chậm khởi động
+    const timer = setTimeout(runCheck, 5000);
+    // Poll định kỳ mỗi 3 phút để bắt được bản vừa được admin Publish sớm nhất
+    const interval = setInterval(runCheck, 3 * 60 * 1000);
+
+    // Lắng nghe event update-available từ main process (bootstrap tự gửi)
+    const cleanupAvailable = window.electronAPI.onUpdateAvailable?.((release) => {
+      if (release) setUpdateInfo(release);
+    });
+
+    // Lắng nghe tiến trình download
+    const cleanupProgress = window.electronAPI.onUpdateProgress?.((payload) => {
+      setUpdatePhase(payload.phase);
+      setUpdateProgress(payload.progress || 0);
+    });
+
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+      try { cleanupAvailable?.(); } catch {}
+      try { cleanupProgress?.(); } catch {}
+    };
+  }, []);
+
+  const handleInstallUpdate = async () => {
+    if (!updateInfo || !window.electronAPI?.installUpdate) return;
+    setUpdatePhase('downloading');
+    setUpdateProgress(0);
+    try {
+      await window.electronAPI.installUpdate(updateInfo);
+    } catch (e) {
+      setUpdatePhase(null);
+      console.error('[Update] install error:', e);
+    }
+  };
 
   // Subscribe to app-log events at app level so logs are captured regardless of active tab
   useEffect(() => {
@@ -234,7 +290,16 @@ function App() {
     setSelectedProfile({ name }); setFormInitialTab('general'); setShowForm(true);
   };
   const handleEditProfile = (profile, tab = 'general') => { setSelectedProfile(profile); setFormInitialTab(tab); setShowForm(true); };
-  const handleDeleteProfile = async (profileId) => { if (!window.confirm('Delete this profile?')) return; try { await api.deleteProfile(profileId); await loadProfiles(); } catch (e) { console.error('Delete error', e); } };
+  const handleDeleteProfile = (profileId) => {
+    const profile = (profiles || []).find(p => p.id === profileId);
+    setDeleteConfirm({ profileId, profileName: profile?.name || profileId });
+  };
+  const confirmDelete = async () => {
+    if (!deleteConfirm) return;
+    const { profileId } = deleteConfirm;
+    setDeleteConfirm(null);
+    try { await api.deleteProfile(profileId); await loadProfiles(); } catch (e) { console.error('Delete error', e); }
+  };
 
   const handleLaunchProfile = async (profileId) => {
     // Block if already starting or running
@@ -245,21 +310,19 @@ function App() {
       // Launch button → always visible browser (headless=false)
       const headless = false;
       setHeadlessPrefs(prev => ({ ...prev, [profileId]: false }));
-      const engine = enginePrefs[profileId] || 'playwright';
+      const p = profiles.find(x => x.id === profileId);
+      const engine = p?.settings?.engine || 'playwright';
 
-      // Only check Playwright engines (cdp uses system Chrome, no install needed)
-      if (engine !== 'cdp') {
-        const isCamoufox = engine === 'camoufox';
-        const isFirefox = engine === 'playwright-firefox' || engine === 'firefox';
-        const requiredBrowser = isCamoufox ? 'camoufox' : isFirefox ? 'firefox' : 'chromium';
-        try {
-          const status = await window.electronAPI?.checkBrowserStatus?.(requiredBrowser);
-          if (status?.status !== 'installed') {
-            setEngineInstallState({ profileId, engine: requiredBrowser, headless });
-            return;
-          }
-        } catch { }
-      }
+      const isCamoufox = engine === 'camoufox';
+      const isFirefox = engine === 'playwright-firefox' || engine === 'firefox';
+      const requiredBrowser = isCamoufox ? 'camoufox' : isFirefox ? 'firefox' : 'chromium';
+      try {
+        const status = await window.electronAPI?.checkBrowserStatus?.(requiredBrowser);
+        if (status?.status !== 'installed') {
+          setEngineInstallState({ profileId, engine: requiredBrowser, headless });
+          return;
+        }
+      } catch { }
 
       await doLaunchProfile(profileId, { headless, engine });
     } catch (e) {
@@ -269,8 +332,9 @@ function App() {
   };
 
   const doLaunchProfile = async (profileId, { headless, engine } = {}) => {
-    const h = headless !== undefined ? headless : !!headlessPrefs[profileId];
-    const eng = engine || enginePrefs[profileId] || 'playwright';
+    const p = profiles.find(x => x.id === profileId);
+    const h = headless !== undefined ? headless : !!p?.settings?.headless;
+    const eng = engine || p?.settings?.engine || 'playwright';
     try {
       const options = { headless: h, engine: eng };
       const result = await window.electronAPI.launchProfile(profileId, options);
@@ -300,7 +364,8 @@ function App() {
     try {
       // Headless button → always hidden (headless=true), show View button after launch
       setHeadlessPrefs(prev => ({ ...prev, [profileId]: true }));
-      const engine = enginePrefs[profileId] || 'playwright';
+      const p = profiles.find(x => x.id === profileId);
+      const engine = p?.settings?.engine || 'playwright';
       const options = { headless: true, engine };
       const result = await window.electronAPI.launchProfile(profileId, options);
       if (!result.success) { setErrorProfiles(prev => ({ ...prev, [profileId]: true })); alert('Error launching headless: ' + result.error); }
@@ -316,7 +381,7 @@ function App() {
       if (isNewProfile && !isPaidUser) {
         const currentProfileCount = (profiles || []).length;
         if (currentProfileCount >= 5) {
-          alert('Free plan giới hạn tối đa 5 profiles.\n\nVui lòng nâng cấp license để tạo thêm profile.');
+          alert('Free plan is limited to a maximum of 5 profiles.\n\nPlease upgrade your license to create more profiles.');
           return;
         }
       }
@@ -340,18 +405,49 @@ function App() {
   const handleCopyWs = async (profileId) => { try { const res = await window.electronAPI.getProfileWs(profileId); const ws = res?.wsEndpoint; if (!ws) { alert('Profile is not running. Launch first.'); return; } await navigator.clipboard.writeText(ws); addToast('WS endpoint copied!', 'success', 2000); } catch (e) { alert('Failed to copy WS endpoint: ' + e.message); } };
 
   // Bulk operations
-  const handleCreateBulk = async (count, namePrefix) => {
+  const handleCreateBulk = async (count, namePrefix, engine = 'playwright') => {
     try {
+      // Find the highest existing number for this prefix to avoid duplicates
+      const prefixLower = namePrefix.toLowerCase();
+      let maxNum = 0;
+      for (const p of profiles) {
+        const name = (p.name || '').toLowerCase();
+        if (name.startsWith(prefixLower)) {
+          const suffix = (p.name || '').slice(namePrefix.length).trim();
+          const n = parseInt(suffix, 10);
+          if (!isNaN(n) && n > maxNum) maxNum = n;
+        }
+      }
+
       const batch = [];
       for (let i = 1; i <= count; i++) {
-        batch.push({ name: `${namePrefix} ${i}` });
+        const num = String(maxNum + i).padStart(4, '0');
+        batch.push({
+          name: `${namePrefix} ${num}`,
+          settings: {
+            engine,
+            identity: { enabled: false },
+            hardware: { enabled: false },
+            display:  { enabled: false },
+            canvas:   { enabled: false },
+            webgl:    { enabled: false },
+            audio:    { enabled: false },
+            media:    { enabled: false },
+            network:  { enabled: false },
+            battery:  { enabled: false },
+          },
+        });
       }
       const res = await api.saveProfilesBulk(batch);
       if (res.success) {
-        addToast(`Created ${res.profiles?.length || count} profiles`, 'success', 2500);
+        if (res.errors && res.errors.length > 0) {
+          addToast(`Created ${res.profiles?.length ?? 0} profiles. ${res.errors.length} failed: ${res.errors[0].error}`, 'warning', 5000);
+        } else {
+          addToast(`Created ${res.profiles?.length ?? count} profiles`, 'success', 2500);
+        }
         await loadProfiles();
       } else {
-        addToast('Bulk create error: ' + (res.error || 'unknown'), 'error', 5000);
+        addToast(res.error || 'Bulk create error', 'error', 5000);
       }
     } catch (e) {
       addToast('Bulk create error: ' + e.message, 'error', 5000);
@@ -360,8 +456,12 @@ function App() {
   const handleDeleteBulk = async (ids) => {
     if (!ids?.length) return;
     const runningIds = ids.filter(id => !!runningWs[id]);
-    const runningMsg = runningIds.length ? `\nNote: ${runningIds.length} running profile(s) will be stopped first.` : '';
-    if (!window.confirm(`Delete ${ids.length} selected profile(s)? This cannot be undone.${runningMsg}`)) return;
+    setDeleteBulkConfirm({ ids, runningCount: runningIds.length });
+  };
+  const confirmDeleteBulk = async () => {
+    if (!deleteBulkConfirm) return;
+    const { ids } = deleteBulkConfirm;
+    setDeleteBulkConfirm(null);
     try {
       const res = await api.deleteProfilesBulk(ids);
       if (res.success) {
@@ -380,11 +480,15 @@ function App() {
     try {
       const res = await api.cloneProfilesBulk(ids, {});
       if (res.success) {
-        addToast(`Cloned ${res.profiles?.length || ids.length} profiles`, 'success', 2500);
+        if (res.errors && res.errors.length > 0) {
+          addToast(`Cloned ${res.profiles?.length ?? 0} profiles. ${res.errors.length} failed: ${res.errors[0].error}`, 'warning', 5000);
+        } else {
+          addToast(`Cloned ${res.profiles?.length ?? ids.length} profiles`, 'success', 2500);
+        }
         clearSelection();
         await loadProfiles();
       } else {
-        addToast('Bulk clone error: ' + (res.error || 'unknown'), 'error', 5000);
+        addToast(res.error || 'Bulk clone error', 'error', 5000);
       }
     } catch (e) {
       addToast('Bulk clone failed: ' + e.message, 'error', 5000);
@@ -456,7 +560,29 @@ function App() {
   const clearSelection = () => setSelectedIds({});
   const selectAll = () => setSelectedIds(Object.fromEntries(profiles.map(p => [p.id, true])));
   const getSelectedList = () => Object.keys(selectedIds).filter(id => selectedIds[id]);
-  const handleStartSelected = async () => { const ids = getSelectedList(); await Promise.all(ids.map(id => handleLaunchProfile(id))); await refreshRunningStatus(); };
+  const handleStartSelected = async () => {
+    const ids = getSelectedList();
+    if (!ids.length) return;
+    // Filter out already-running/starting profiles
+    const toStart = ids.filter(id => {
+      const st = profileStatuses[id]?.status;
+      return st !== 'RUNNING' && st !== 'STARTING' && st !== 'STOPPING';
+    });
+    if (!toStart.length) return;
+    // Load max concurrent limit
+    let maxConcurrent = 5;
+    try {
+      const res = await window.electronAPI.loadSettings?.();
+      if (res?.settings?.maxConcurrentBrowsers) maxConcurrent = Number(res.settings.maxConcurrentBrowsers);
+    } catch {}
+    const currentlyRunning = Object.values(profileStatuses).filter(s => s?.status === 'RUNNING' || s?.status === 'STARTING').length;
+    const slotsAvailable = Math.max(0, maxConcurrent - currentlyRunning);
+    const toLaunch = toStart.slice(0, slotsAvailable);
+    const skipped = toStart.length - toLaunch.length;
+    if (toLaunch.length > 0) await Promise.all(toLaunch.map(id => handleLaunchProfile(id)));
+    if (skipped > 0) addToast(`${skipped} profile(s) skipped — max ${maxConcurrent} concurrent browsers reached.`, 'warning', 5000);
+    await refreshRunningStatus();
+  };
   const handleStopSelected = async () => { const ids = getSelectedList(); await Promise.all(ids.map(id => window.electronAPI.stopProfile(id))); await refreshRunningStatus(); };
   const handleDeleteSelected = async () => { const ids = getSelectedList(); if (!ids.length) return; await handleDeleteBulk(ids); };
   const handleCloneSelected = async () => { const ids = getSelectedList(); if (!ids.length) return; await handleCloneBulk(ids); };
@@ -544,6 +670,11 @@ function App() {
           />
         );
 
+      case 'macros':
+        return (
+          <MacroManager profiles={profiles} />
+        );
+
       case 'proxies':
         return (
           <ProxyManager />
@@ -575,6 +706,52 @@ function App() {
 
   return (
     <div className="app">
+      {/* ── Update banner ──────────────────────────────────────────────── */}
+      {updateInfo && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+          background: 'linear-gradient(90deg, #0e7490, #0891b2)',
+          color: '#fff', padding: '8px 16px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          fontSize: '13px', gap: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+        }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>⬆️</span>
+            <strong>Update available: v{updateInfo.version}</strong>
+            {updateInfo.notes && (
+              <span style={{ opacity: 0.75, fontSize: '12px' }}>— {updateInfo.notes.slice(0, 80)}{updateInfo.notes.length > 80 ? '…' : ''}</span>
+            )}
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {updatePhase === 'downloading' && (
+              <span style={{ fontSize: '12px', opacity: 0.85 }}>
+                Downloading… {Math.round(updateProgress * 100)}%
+              </span>
+            )}
+            {updatePhase === 'installing' && (
+              <span style={{ fontSize: '12px', opacity: 0.85 }}>Installing… App will restart shortly.</span>
+            )}
+            {!updatePhase && (
+              <button
+                onClick={handleInstallUpdate}
+                style={{
+                  background: '#fff', color: '#0e7490', border: 'none',
+                  borderRadius: '6px', padding: '4px 14px', fontWeight: 700,
+                  fontSize: '12px', cursor: 'pointer',
+                }}
+              >
+                Update now
+              </button>
+            )}
+            <button
+              onClick={() => setUpdateInfo(null)}
+              style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', opacity: 0.7, fontSize: '16px', lineHeight: 1, padding: '0 4px' }}
+              title="Dismiss"
+            >✕</button>
+          </span>
+        </div>
+      )}
+
       {!showForm && (
         <DashboardSidebar
           activeNav={activeNav}
@@ -601,7 +778,7 @@ function App() {
             // Relaunch automatically after successful install
             doLaunchProfile(profileId, {
               headless,
-              engine: engine === 'firefox' ? 'playwright-firefox' : 'playwright',
+              engine: engine === 'firefox' ? 'playwright-firefox' : engine === 'camoufox' ? 'camoufox' : 'playwright',
             });
           }}
         />
@@ -619,6 +796,79 @@ function App() {
         />
       )}
       <Toasts toasts={toasts} onDismiss={(id) => setToasts(prev => prev.filter(t => t.id !== id))} />
+
+      {/* Delete Profile Confirmation Modal */}
+      {deleteConfirm && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }}
+          onClick={() => setDeleteConfirm(null)}>
+          <div style={{ background: '#fff', borderRadius: '12px', padding: '28px 28px 24px', width: '420px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', marginBottom: '20px' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </div>
+              <div>
+                <div style={{ fontSize: '16px', fontWeight: '700', color: '#111827', marginBottom: '4px' }}>Delete Profile</div>
+                <div style={{ fontSize: '14px', color: '#6b7280', lineHeight: 1.5 }}>
+                  <span style={{ fontWeight: '600', color: '#374151' }}>{deleteConfirm.profileName}</span> and all its data will be permanently removed.
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button onClick={() => setDeleteConfirm(null)}
+                style={{ padding: '8px 20px', borderRadius: '8px', border: '1px solid #d1d5db', background: '#fff', color: '#374151', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={confirmDelete}
+                style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: '#ef4444', color: '#fff', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {deleteBulkConfirm && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }}
+          onClick={() => setDeleteBulkConfirm(null)}>
+          <div style={{ background: '#fff', borderRadius: '12px', padding: '28px 28px 24px', width: '420px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', marginBottom: '20px' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </div>
+              <div>
+                <div style={{ fontSize: '16px', fontWeight: '700', color: '#111827', marginBottom: '4px' }}>Delete {deleteBulkConfirm.ids.length} Profiles</div>
+                <div style={{ fontSize: '14px', color: '#6b7280', lineHeight: 1.5 }}>
+                  <span style={{ fontWeight: '600', color: '#374151' }}>{deleteBulkConfirm.ids.length} selected profiles</span> and all their data will be permanently removed.
+                  {deleteBulkConfirm.runningCount > 0 && (
+                    <div style={{ marginTop: '6px', color: '#f59e0b', fontSize: '13px' }}>
+                      ⚠ {deleteBulkConfirm.runningCount} running profile(s) will be stopped first.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button onClick={() => setDeleteBulkConfirm(null)}
+                style={{ padding: '8px 20px', borderRadius: '8px', border: '1px solid #d1d5db', background: '#fff', color: '#374151', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={confirmDeleteBulk}
+                style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: '#ef4444', color: '#fff', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* API Password Modal */}
       {showApiPwdModal && (

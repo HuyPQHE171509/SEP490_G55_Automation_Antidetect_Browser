@@ -8,6 +8,7 @@ import {
   resetPassword,
   firebaseSignOut,
   onAuthStateChanged,
+  syncUserToFirestore,
   auth,
 } from '../services/firebase';
 
@@ -26,11 +27,11 @@ export const useAuthStore = create(
       isAuthenticated: false,
       /** true while Firebase is still restoring session on page load */
       loading: true,
-      /** true khi tài khoản đã mua gói Pro hoặc đang dùng trial */
+      /** true when the account has purchased Pro or is on a trial */
       isPro: false,
-      /** true khi đang dùng trial (subset of isPro) */
+      /** true when on a trial (subset of isPro) */
       isTrial: false,
-      /** ISO string — khi nào trial hết hạn */
+      /** ISO string — when the trial expires */
       trialExpiresAt: null,
 
       // ── Bootstrap: called once in main.jsx to sync Firebase state ───────────
@@ -41,7 +42,9 @@ export const useAuthStore = create(
             import('../services/firebase').then(({ normaliseUser }) => {
               const user = normaliseUser(firebaseUser);
               set({ user, isAuthenticated: true, loading: false });
-              // Kiểm tra trạng thái Pro ngay sau khi đăng nhập
+              // Sync to Firestore so admin rules can resolve role
+              syncUserToFirestore(firebaseUser);
+              // Check Pro status right after sign-in
               get().checkProStatus(user.email);
             });
           } else {
@@ -51,7 +54,7 @@ export const useAuthStore = create(
         return unsub; // caller can unsubscribe
       },
 
-      // ── Kiểm tra user có gói Pro không bằng cách gọi API ──────────────────────
+      // ── Check if user has Pro by calling the API ─────────────────────────────
       checkProStatus: async (email) => {
         if (!email) return;
         try {
@@ -65,7 +68,7 @@ export const useAuthStore = create(
             });
           }
         } catch {
-          // Không ảnh hưởng đến luồng đăng nhập nếu API bị lỗi
+          // Non-fatal: does not affect sign-in flow if API fails
         }
       },
 

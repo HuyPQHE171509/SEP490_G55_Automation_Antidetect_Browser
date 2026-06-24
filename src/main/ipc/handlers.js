@@ -1,4 +1,4 @@
-const { ipcMain, shell } = require('electron');
+const { ipcMain, shell, BrowserWindow } = require('electron');
 const { appendLog } = require('../logging/logger');
 const {
   launchProfileInternal,
@@ -27,9 +27,11 @@ const { loadSettings, saveSettings } = require('../storage/settings');
 const { listPresetsInternal, addPresetInternal, deletePresetInternal } = require('../storage/presets');
 const { performAction } = require('../engine/actions');
 const { listScriptsInternal, getScriptInternal, saveScriptInternal, deleteScriptInternal } = require('../storage/scripts');
-const { addTaskLog, getTaskLogs, getTaskLogById, deleteTaskLog, clearTaskLogs } = require('../storage/taskLogs');
+const { addTaskLog, updateTaskLog, getTaskLogs, getTaskLogById, deleteTaskLog, clearTaskLogs } = require('../storage/taskLogs');
 const { listModules, installModule, uninstallModule } = require('../storage/scriptModules');
 const { executeScript, stopScript, pauseScript, resumeScript, isScriptRunning } = require('../engine/scriptRuntime');
+// scriptRunner: helper tập trung áp dụng ethical linter + task log + skip detection (Bug #1/#2/#3)
+const { runScriptWithFullChecks } = require('../engine/scriptRunner');
 const { getAuditLogContent } = require('../logging/auditLogger');
 const {
   getProxiesInternal, getProxyByIdInternal,
@@ -38,8 +40,241 @@ const {
   importProxiesInternal, exportProxiesInternal,
 } = require('../storage/proxies');
 const { checkProxy, checkProxiesBatch } = require('../services/ProxyChecker');
-const { getMachineCode, validateLicenseKey } = require('../services/machineId');
+const { getMachineCode, validateLicenseKey, deactivateLicense } = require('../services/machineId');
 const { checkBrowserStatus, installBrowser, uninstallBrowser, reinstallBrowser } = require('../services/browserManagerService');
+const macroRecorders = new Map();
+const macroRunState = new Map(); // profileId → { cancelled: boolean } — hỗ trợ dừng giữa chừng (Bug #3)
+
+// Helper to determine if two URLs are equivalent (e.g. they represent the same dynamic feature/page structure like YouTube Shorts, watch page, Reels, TikTok videos, etc.)
+function isUrlEquivalent(currentUrlStr, recordedUrlStr) {
+  if (!currentUrlStr || !recordedUrlStr) return false;
+  try {
+    const cur = new URL(currentUrlStr);
+    const rec = new URL(recordedUrlStr);
+    
+    // Different hostnames are never equivalent
+    if (cur.hostname !== rec.hostname) return false;
+    
+    const curPath = cur.pathname;
+    const recPath = rec.pathname;
+    
+    // YouTube Shorts: /shorts/ID
+    if (curPath.startsWith('/shorts/') && recPath.startsWith('/shorts/')) {
+      return true;
+    }
+    // YouTube Watch: /watch
+    if (curPath.startsWith('/watch') && recPath.startsWith('/watch')) {
+      return true;
+    }
+    // TikTok: /@username/video/ID
+    if (curPath.includes('/video/') && recPath.includes('/video/')) {
+      return true;
+    }
+    // Facebook Reels: /reels/ID
+    if (curPath.startsWith('/reels/') && recPath.startsWith('/reels/')) {
+      return true;
+    }
+    // Instagram Reels: /reels/ID or /p/ID
+    if (curPath.startsWith('/reels/') && recPath.startsWith('/reels/')) {
+      return true;
+    }
+    if (curPath.startsWith('/p/') && recPath.startsWith('/p/')) {
+      return true;
+    }
+    
+    // Default fallback: Check path segments (ignore last segment if it is likely a dynamic ID)
+    const curSegments = curPath.split('/').filter(Boolean);
+    const recSegments = recPath.split('/').filter(Boolean);
+    if (curSegments.length === recSegments.length && curSegments.length > 1) {
+      let match = true;
+      for (let i = 0; i < curSegments.length - 1; i++) {
+        if (curSegments[i] !== recSegments[i]) {
+          match = false;
+          break;
+        }
+      }
+      const lastCur = curSegments[curSegments.length - 1];
+      const lastRec = recSegments[recSegments.length - 1];
+      const curIsId = lastCur.length >= 6 || /\d/.test(lastCur);
+      const recIsId = lastRec.length >= 6 || /\d/.test(lastRec);
+      if (match && curIsId && recIsId) {
+        return true;
+      }
+    }
+    
+    return curPath === recPath;
+  } catch {
+    return false;
+  }
+}
+
+async function injectMacroRecorderScript(page) {
+  await page.evaluate(() => {
+    // ── getCssSelector: tạo selector ổn định, ưu tiên các attribute bền vững ──
+    // Thứ tự ưu tiên: id (nếu duy nhất) → data-testid → leo lên ancestor button/a → password type → name → jsname → aria-label → title → href → class
+    function getCssSelector(el) {
+      try {
+        if (el.id) {
+          var escapedId = CSS.escape(el.id);
+          if (document.querySelectorAll('#' + escapedId).length === 1) {
+            return '#' + escapedId;
+          }
+        }
+        var dt = el.getAttribute && el.getAttribute('data-testid');
+        if (dt) return '[data-testid="' + dt.replace(/"/g, '\\"') + '"]';
+
+        // Tự động leo lên ancestor gần nhất là button/a/label/[role=button] nếu có,
+        // để lấy selector đại diện cho phần tử tương tác (ngoại trừ input/textarea/select).
+        var tag = el.tagName.toLowerCase();
+        if (tag !== 'input' && tag !== 'textarea' && tag !== 'select') {
+          var anc = el;
+          while (anc && anc !== document.documentElement) {
+            var ancTag = anc.tagName.toLowerCase();
+            if (ancTag === 'button' || ancTag === 'a' || ancTag === 'label' ||
+                (anc.getAttribute && anc.getAttribute('role') === 'button')) {
+              el = anc;
+              if (el.id) {
+                var escapedAncId = CSS.escape(el.id);
+                if (document.querySelectorAll('#' + escapedAncId).length === 1) {
+                  return '#' + escapedAncId;
+                }
+              }
+              break;
+            }
+            anc = anc.parentElement;
+          }
+        }
+        var finalTag = el.tagName.toLowerCase();
+
+        // 1. type="password" (đặc thù và cực kỳ an toàn cho password field)
+        if (finalTag === 'input' && el.getAttribute && el.getAttribute('type') === 'password') {
+          return 'input[type="password"]';
+        }
+
+        // 2. Ưu tiên name — ổn định với form elements (ngăn chặn trùng lặp jsname)
+        var nm = el.getAttribute && el.getAttribute('name');
+        if (nm) return finalTag + '[name="' + nm.replace(/"/g, '\\"') + '"]';
+
+        // 3. Ưu tiên jsname — Google dùng cho automation, ổn định hơn class
+        var jn = el.getAttribute && el.getAttribute('jsname');
+        if (jn) return finalTag + '[jsname="' + jn + '"]';
+
+        // 4. Ưu tiên aria-label — accessible label, ít thay đổi hơn class
+        var al = el.getAttribute && el.getAttribute('aria-label');
+        if (al && al.length < 80) return finalTag + '[aria-label="' + al.replace(/"/g, '\\"') + '"]';
+
+        // 5. Ưu tiên title — rất tốt cho menu items, sidebar buttons
+        var tt = el.getAttribute && el.getAttribute('title');
+        if (tt && tt.length < 80) return finalTag + '[title="' + tt.replace(/"/g, '\\"') + '"]';
+
+        // 6. Ưu tiên href cho thẻ a
+        if (finalTag === 'a') {
+          var hr = el.getAttribute && el.getAttribute('href');
+          if (hr && hr.length < 150 && !hr.startsWith('javascript:')) {
+            return 'a[href="' + hr.replace(/"/g, '\\"') + '"]';
+          }
+        }
+
+        // Fallback class-based (giới hạn 3 class đầu)
+        if (el.classList && el.classList.length > 0) {
+          var cls = Array.from(el.classList).slice(0, 3)
+            .map(function(c) { try { return '.' + CSS.escape(c); } catch { return ''; } }).join('');
+          return finalTag + cls;
+        }
+        // Structural fallback
+        var parts = [];
+        var cur = el;
+        while (cur && cur.nodeType === 1 && cur !== document.documentElement) {
+          if (cur.id) {
+            var escapedCurId = CSS.escape(cur.id);
+            if (document.querySelectorAll('#' + escapedCurId).length === 1) {
+              parts.unshift('#' + escapedCurId);
+              break;
+            }
+          }
+          var sel = cur.nodeName.toLowerCase();
+          var nth = 1, sib = cur.previousElementSibling;
+          while (sib) { nth++; sib = sib.previousElementSibling; }
+          if (nth > 1) sel += ':nth-child(' + nth + ')';
+          parts.unshift(sel);
+          cur = cur.parentElement;
+        }
+        return parts.join(' > ') || finalTag;
+      } catch { return el.tagName ? el.tagName.toLowerCase() : 'unknown'; }
+    }
+    if (window.__obt_rec_click) { document.removeEventListener('click', window.__obt_rec_click, true); window.__obt_rec_click = null; }
+    if (window.__obt_rec_change) { document.removeEventListener('change', window.__obt_rec_change, true); window.__obt_rec_change = null; }
+    if (window.__obt_rec_keydown) { document.removeEventListener('keydown', window.__obt_rec_keydown, true); window.__obt_rec_keydown = null; }
+    // Bug #4 fix: xóa guard cứng "if (!__obt_macro_rec) return" — Playwright tự re-inject exposeFunction
+    // sau navigation, và mỗi listener đã có try-catch riêng nên an toàn khi __obt_macro_rec chưa sẵn sàng.
+    // Bug #2 fix: dọn scroll listener từ lần inject trước để tránh duplicate.
+    if (window.__obt_rec_scroll) { document.removeEventListener('scroll', window.__obt_rec_scroll, true); clearTimeout(window.__obt_scroll_timer); window.__obt_rec_scroll = null; window.__obt_scroll_timer = null; }
+    window.__obt_rec_click = function(e) {
+      try {
+        const el = e.target;
+        if (!el || !el.tagName) return;
+        const tag = el.tagName.toLowerCase();
+        // Bug #1 fix: chỉ bỏ qua input text/textarea/select (đã xử lý qua 'change' event).
+        // Vẫn GHI click cho input[type=submit|button|checkbox|radio|image] để capture đăng nhập.
+        if (['select', 'option'].includes(tag)) return;
+        if (['input', 'textarea'].includes(tag)) {
+          const inputType = (el.getAttribute('type') || 'text').toLowerCase();
+          if (!['submit', 'button', 'checkbox', 'radio', 'image'].includes(inputType)) return;
+        }
+        window.__obt_macro_rec({
+          type: 'click.element',
+          params: { selector: getCssSelector(el) },
+          label: (el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '').trim().slice(0, 60),
+          delay: 0,
+        });
+      } catch {}
+    };
+    window.__obt_rec_change = function(e) {
+      try {
+        const el = e.target;
+        if (!el || !el.tagName) return;
+        if (!['input', 'textarea', 'select'].includes(el.tagName.toLowerCase())) return;
+        window.__obt_macro_rec({
+          type: 'input.fill',
+          params: { selector: getCssSelector(el), value: el.value || '' },
+          label: (el.placeholder || el.name || el.getAttribute('aria-label') || '').trim().slice(0, 60),
+          delay: 0,
+        });
+      } catch {}
+    };
+    const SKEYS = new Set(['Enter', 'Tab', 'Escape', 'F1', 'F2', 'F3', 'F4', 'F5', 'F12', 'Backspace', 'Delete', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']);
+    window.__obt_rec_keydown = function(e) {
+      try {
+        if (SKEYS.has(e.key)) {
+          window.__obt_macro_rec({ type: 'keyboard.pressKey', params: { key: e.key }, label: 'Press ' + e.key, delay: 0 });
+        }
+      } catch {}
+    };
+    document.addEventListener('click', window.__obt_rec_click, true);
+    document.addEventListener('change', window.__obt_rec_change, true);
+    document.addEventListener('keydown', window.__obt_rec_keydown, true);
+    // Bug #2 fix: ghi thao tác scroll với debounce 400ms để tránh spam step.
+    window.__obt_scroll_timer = null;
+    window.__obt_rec_scroll = function() {
+      clearTimeout(window.__obt_scroll_timer);
+      window.__obt_scroll_timer = setTimeout(function() {
+        try {
+          var sx = Math.round(window.scrollX);
+          var sy = Math.round(window.scrollY);
+          if (window.__obt_macro_rec) {
+            window.__obt_macro_rec({
+              type: 'page.scroll',
+              params: { x: sx, y: sy },
+              label: 'Scroll to (' + sx + ', ' + sy + ')',
+              delay: 300,
+            });
+          }
+        } catch {}
+      }, 400);
+    };
+    document.addEventListener('scroll', window.__obt_rec_scroll, true);
+  });
+}
 
 function registerIpcHandlers(extra = {}) {
   // Hàm đăng ký an toàn: Xóa handler cũ nếu có để hỗ trợ tính năng hot-reload (tải lại nóng) trong quá trình dev
@@ -51,6 +286,7 @@ function registerIpcHandlers(extra = {}) {
   // Quản lý Mã máy (Machine Code) & Giấy phép (License)
   handle('get-machine-code', () => getMachineCode());
   handle('validate-license', (_e, key) => validateLicenseKey(key));
+  handle('deactivate-license', () => deactivateLicense());
 
   // Quản lý Môi trường chạy Trình duyệt (Browser Runtime Manager)
   handle('browser-runtime-status', async (_e, name) => checkBrowserStatus(name));
@@ -75,28 +311,34 @@ function registerIpcHandlers(extra = {}) {
     return r;
   });
 
+  // [UC_08 / UC_14.01] Lấy danh sách tất cả profile từ file lưu trữ
   handle('get-profiles', async () => await getProfilesInternal());
+  // [UC_08.01 / UC_08.02 / UC_14.02 / UC_14.03] Tạo mới hoặc cập nhật profile — gọi saveProfileInternal() trong storage/profiles.js
   handle('save-profile', async (_e, profile) => {
     const r = await saveProfileInternal(profile);
     if (r?.success) appendLog('system', `Profile saved: ${profile.name || profile.id}`);
     return r;
   });
+  // [UC_08.03 / UC_14.04] Xóa profile — dừng profile đang chạy trước, sau đó xóa khỏi storage
   handle('delete-profile', async (_e, profileId) => {
     try { await stopProfileInternal(profileId); } catch { }
     const r = await deleteProfileInternal(profileId);
     if (r?.success) appendLog('system', `Profile deleted: ${profileId}`);
     return r;
   });
+  // [UC_08.04 / UC_08.05 / UC_15.01] Mở trình duyệt cho profile — gọi launchProfileInternal() trong controllers/profiles.js
   handle('launch-profile', async (_e, profileId, options = {}) => {
     appendLog(profileId, `Profile launch requested (engine=${options.engine || 'default'}, headless=${!!options.headless})`);
     const r = await launchProfileInternal(profileId, options);
     if (!r?.success) appendLog(profileId, `Profile launch failed: ${r?.error || 'unknown'}`);
     return r;
   });
+  // [UC_08.06 / UC_15.02] Dừng trình duyệt đang chạy của profile
   handle('stop-profile', async (_e, profileId) => {
     appendLog(profileId, 'Profile stop requested');
     return await stopProfileInternal(profileId);
   });
+  // [UC_08.06] Dừng tất cả trình duyệt đang chạy
   handle('stop-all-profiles', async () => {
     appendLog('system', 'Stop all profiles requested');
     return await stopAllProfilesInternal();
@@ -125,7 +367,9 @@ function registerIpcHandlers(extra = {}) {
     return r;
   });
   handle('get-profile-ws', async (_e, profileId) => await getProfileWsInternal(profileId));
+  // [UC_15.03] Kiểm tra trạng thái đang chạy của tất cả profile
   handle('get-running-map', async () => await getRunningMapInternal());
+  // [UC_15.03] Lấy map trạng thái chi tiết (STARTING/RUNNING/STOPPED) của các profile
   handle('get-status-map', async () => getStatusMapInternal());
   handle('get-locales-timezones', async () => await getLocalesTimezonesInternal());
   handle('clone-profile', async (_e, sourceProfileId, overrides = {}) => {
@@ -161,6 +405,7 @@ function registerIpcHandlers(extra = {}) {
   // Tự động hóa (Automation)
   handle('run-automation-now', async (_e, profileId) => await runAutomationNowInternal(profileId));
 
+  // [UC_16.xx] Dispatcher chung cho tất cả hành động tương tác trình duyệt (navigate, click, fill, screenshot...)
   // Bộ thực thi hành động chung nhận từ Frontend: (profileId, actionName, params)
   handle('profile-action', async (_e, profileId, actionName, params = {}) => {
     try { return await performAction(profileId, String(actionName), params || {}); }
@@ -204,19 +449,97 @@ function registerIpcHandlers(extra = {}) {
   });
 
   // Quản lý Kịch bản Tự động hóa (Scripts)
+  // [UC_19.01] Lấy danh sách tất cả script
   handle('scripts-list', async () => await listScriptsInternal());
   handle('scripts-get', async (_e, id) => await getScriptInternal(id));
+  // [UC_19.02 / UC_19.03] Tạo mới hoặc cập nhật script
   handle('scripts-save', async (_e, script) => {
     const r = await saveScriptInternal(script);
-    if (r?.success) appendLog('system', `Script saved: "${script?.name || script?.id || 'unnamed'}"`);
-    else appendLog('system', `Script save failed: ${r?.error || 'unknown'}`);
+    if (r?.success) {
+      appendLog('system', `Script saved: "${script?.name || script?.id || 'unnamed'}"`);
+      // Đồng bộ cron job với schedule mới (scheduleScript tự cancel job cũ nếu có)
+      try {
+        const { scheduleScript } = require('../engine/scriptScheduler');
+        scheduleScript(r.script);
+      } catch (e) {
+        appendLog('system', `scheduleScript error after save: ${e?.message || e}`);
+      }
+    } else {
+      appendLog('system', `Script save failed: ${r?.error || 'unknown'}`);
+    }
     return r;
   });
+  // [UC_19.04] Xóa script — hủy cron job trước rồi mới xóa file
   handle('scripts-delete', async (_e, id) => {
+    // Cancel cron job BEFORE deleting so scheduler doesn't fire after deletion
+    try {
+      const { cancelScript } = require('../engine/scriptScheduler');
+      cancelScript(String(id));
+    } catch {}
     const r = await deleteScriptInternal(id);
     if (r?.success) appendLog('system', `Script deleted: ${id}`);
     return r;
   });
+
+  // [Inspect Fingerprint] Đọc fingerprint thực tế từ browser đang chạy
+  handle('profile-inspect-fingerprint', async (_e, profileId) => {
+    const { inspectFingerprintInternal } = require('../controllers/profiles');
+    return await inspectFingerprintInternal(profileId);
+  });
+
+  // [Bug #5 fix] Validate cron expression trên main process dùng node-cron.validate()
+  // Được gọi từ UI trước khi save — đảm bảo expression hợp lệ trước khi ghi xuống file
+  handle('validate-cron', (_e, expr) => {
+    try {
+      const nodeCron = require('node-cron');
+      const valid = typeof expr === 'string' && expr.trim().length > 0 && nodeCron.validate(expr.trim());
+      return { valid, expr: expr?.trim() };
+    } catch (e) {
+      return { valid: false, expr: expr?.trim(), error: e?.message };
+    }
+  });
+
+  // [Bug #6 fix] "Test Run Now" — chạy ngay script theo lịch mà không cần đợi cron tick
+  // Dùng đúng profileId đã cấu hình trong schedule của script
+  handle('script-run-now', async (_e, scriptId) => {
+    try {
+      const scriptResult = await getScriptInternal(scriptId);
+      if (!scriptResult?.success || !scriptResult.script) {
+        return { success: false, error: 'Script not found: ' + scriptId };
+      }
+      const script = scriptResult.script;
+      const profileId = script.schedule?.profileId;
+      if (!profileId) return { success: false, error: 'No profile configured for this schedule. Please set a profile first.' };
+
+      const code       = script.code || '';
+      const scriptName = script.name || scriptId;
+      appendLog(profileId, `[Run Now] Manual trigger for scheduled script "${scriptName}"`);
+
+      // Launch profile nếu chưa chạy
+      const { runningProfiles } = require('../state/runtime');
+      if (!runningProfiles.has(profileId)) {
+        const { readProfiles } = require('../storage/profiles');
+        const profileData  = readProfiles().find(p => p.id === profileId);
+        if (!profileData) return { success: false, error: `Profile "${profileId}" not found. It may have been deleted.` };
+        const engine       = profileData?.settings?.engine || 'playwright';
+        const headless     = script.browserMode === 'headless';
+        const launchResult = await launchProfileInternal(profileId, { headless, engine });
+        if (!launchResult.success) return { success: false, error: 'Failed to launch profile: ' + (launchResult.error || 'unknown') };
+        await new Promise(r => setTimeout(r, 1500));
+      }
+
+      // Thực thi qua helper đầy đủ (linter + task log + skip detection)
+      return await runScriptWithFullChecks(profileId, code, {
+        scriptId,
+        scriptName,
+        source: 'run-now',
+        timeoutMs: 120000,
+      });
+    } catch (e) {
+      return { success: false, error: e?.message || String(e) };
+    }
+  });
+  // [UC_17.03] Thực thi script automation trên profile — kiểm tra ethical, tự launch profile nếu chưa chạy
   handle('scripts-execute', async (_e, profileId, scriptId, opts) => {
     const startedAt = new Date().toISOString();
     try {
@@ -228,18 +551,7 @@ function registerIpcHandlers(extra = {}) {
       const scriptName = scriptResult.script.name || scriptId;
       appendLog(profileId, `Script execute: "${scriptName}"`);
 
-      // Linter: Ethical Domain Checking & Attack Pattern Scanner (BR_01)
-      // Dời Linter lên tận cửa ngõ IPC Handler. Quét code và cấm mở Profile nếu Vi phạm.
-      const restrictedDomainPattern = /\.gov|\.mil|\.edu|\b(bank|paypal|vnpay|momo|zalopay|shopeepay|viettelpay|agribank|vietcombank|techcombank|mbbank|sacombank|vpbank|bidv|crypto|binance|bitcoin|usdt)\b/i;
-      const ddosPattern = /while\s*\(\s*true\s*\)\s*\{[^{}]*(fetch|actions\.)/i;
-      
-      if (restrictedDomainPattern.test(code) || ddosPattern.test(code)) {
-        const { appendAuditLog } = require('../logging/auditLogger');
-        appendAuditLog('VIOLATION_BLOCKED', `Script attempted to access restricted patterns`, profileId);
-        appendLog(profileId, 'EthicalViolationError: Restricted domain access or spam patterns are strictly prohibited.');
-        return { success: false, error: 'EthicalViolationError: Restricted domain access or sensitive patterns are strictly prohibited by system policies.' };
-      }
-
+      // ── Launch profile nếu chưa chạy (logic này giữ nguyên tại IPC handler) ──────
       const { runningProfiles } = require('../state/runtime');
       if (!runningProfiles.has(profileId)) {
         const headless = !!(opts && opts.headless);
@@ -255,19 +567,27 @@ function registerIpcHandlers(extra = {}) {
         await new Promise(r => setTimeout(r, 1500));
       }
 
-      const result = await executeScript(profileId, code, opts || {});
-      const finishedAt = new Date().toISOString();
+      // ── runScriptWithFullChecks: ethical linter + skip detection + task log + execute ──
+      // Bug #1: linter giờ được áp dụng ở scriptRunner.js thay vì inline tại đây
+      // Bug #2: task log được ghi bên trong helper (không cần ghi thêm ở đây)
+      // Bug #3: nếu script đang chạy sẽ log rõ tick bị skip thay vì nuốt im lặng
+      const result = await runScriptWithFullChecks(profileId, code, {
+        scriptId,
+        scriptName,
+        source: 'ipc',
+        timeoutMs: Math.min(opts?.timeoutMs || 120000, 300000),
+      });
       if (result.success) {
         appendLog(profileId, `Script finished OK: "${scriptName}"`);
-        await addTaskLog({ scriptId, scriptName, profileId, status: 'completed', startedAt, finishedAt, logs: result.logs || [] });
-      } else {
+      } else if (!result.skipped) {
         const isStopped = result.error && String(result.error).includes('stopped by user');
         appendLog(profileId, isStopped ? `Script stopped by user` : `Script error: ${result.error}`);
-        await addTaskLog({ scriptId, scriptName, profileId, status: isStopped ? 'stopped' : 'error', startedAt, finishedAt, logs: result.logs || [], error: result.error });
       }
       return result;
     }
     catch (e) {
+      // Catch dành cho lỗi xảy ra TRƯỚC khi runScriptWithFullChecks được gọi
+      // (ví dụ: getScriptInternal throw, hoặc launchProfile throw)
       await addTaskLog({ scriptId, scriptName: scriptId, profileId, status: 'error', startedAt, finishedAt: new Date().toISOString(), logs: [], error: e?.message || String(e) });
       return { success: false, error: e?.message || String(e) };
     }
@@ -291,8 +611,10 @@ function registerIpcHandlers(extra = {}) {
   });
 
   // Quản lý nhật ký tác vụ theo thời gian thực (Task logs)
+  // [UC_17.01] Lấy danh sách task log
   handle('task-logs-list', async () => getTaskLogs());
   handle('task-logs-get', async (_e, id) => getTaskLogById(id));
+  // [UC_17.05] Xóa task record
   handle('task-logs-delete', async (_e, id) => {
     const r = await deleteTaskLog(id);
     if (r?.success) appendLog('system', `Task log deleted: ${id}`);
@@ -304,10 +626,73 @@ function registerIpcHandlers(extra = {}) {
     return r;
   });
 
+  // Chạy task được tạo từ API — cập nhật trực tiếp bản ghi hiện tại, không tạo mới
+  handle('task-run', async (_e, taskId) => {
+    const startedAt = new Date().toISOString();
+    try {
+      const found = await getTaskLogById(taskId);
+      if (!found.success) return { success: false, error: 'Task not found: ' + taskId };
+      const task = found.taskLog;
+      const code = task.scriptContent || task._scriptContent || '';
+      if (!code) return { success: false, error: 'Task has no scriptContent' };
+      const profileId = task.profileId;
+      const taskName = task.name || task.scriptName || taskId;
+
+      const restrictedDomainPattern = /\.gov|\.mil|\.edu|\b(bank|paypal|vnpay|momo|zalopay|shopeepay|viettelpay|agribank|vietcombank|techcombank|mbbank|sacombank|vpbank|bidv|crypto|binance|bitcoin|usdt)\b/i;
+      const ddosPattern = /while\s*\(\s*true\s*\)\s*\{[^{}]*(fetch|actions\.)/i;
+      if (restrictedDomainPattern.test(code) || ddosPattern.test(code)) {
+        const { appendAuditLog } = require('../logging/auditLogger');
+        appendAuditLog('VIOLATION_BLOCKED', `Task attempted to access restricted patterns`, profileId);
+        return { success: false, error: 'EthicalViolationError: Restricted domain access or sensitive patterns are strictly prohibited.' };
+      }
+
+      appendLog(profileId, `Task execute: "${taskName}"`);
+      const prevLogs = task.logs || [];
+      const runSeparator = { time: startedAt, message: `── Run ${new Date(startedAt).toLocaleString()} ──` };
+      await updateTaskLog(taskId, { status: 'running', startedAt, completedAt: null, error: null });
+
+      const { runningProfiles } = require('../state/runtime');
+      if (!runningProfiles.has(profileId)) {
+        const headless = task.headless !== undefined ? task.headless : false;
+        const { readProfiles } = require('../storage/profiles');
+        const profileForEngine = readProfiles().find(p => p.id === profileId);
+        const profileEngine = profileForEngine?.settings?.engine || 'playwright';
+        const launchResult = await launchProfileInternal(profileId, { headless, engine: profileEngine });
+        if (!launchResult.success) {
+          appendLog(profileId, `Task execute failed — could not launch profile: ${launchResult.error || 'unknown'}`);
+          await updateTaskLog(taskId, { status: 'error', completedAt: new Date().toISOString(), error: 'Failed to launch profile: ' + (launchResult.error || 'unknown'), logs: [...prevLogs, runSeparator] });
+          return { success: false, error: 'Failed to launch profile: ' + (launchResult.error || 'unknown') };
+        }
+        await new Promise(r => setTimeout(r, 1500));
+      }
+
+      const result = await executeScript(profileId, code, {});
+      const completedAt = new Date().toISOString();
+      const combinedLogs = [...prevLogs, runSeparator, ...(result.logs || [])];
+      if (result.success) {
+        appendLog(profileId, `Task finished OK: "${taskName}"`);
+        await updateTaskLog(taskId, { status: 'completed', startedAt, completedAt, logs: combinedLogs, error: null });
+      } else {
+        const isStopped = result.error && String(result.error).includes('stopped by user');
+        appendLog(profileId, isStopped ? 'Task stopped by user' : `Task error: ${result.error}`);
+        await updateTaskLog(taskId, { status: isStopped ? 'stopped' : 'error', startedAt, completedAt, logs: combinedLogs, error: result.error || null });
+      }
+      return result;
+    } catch (e) {
+      await updateTaskLog(taskId, { status: 'error', completedAt: new Date().toISOString(), error: e?.message || String(e) });
+      return { success: false, error: e?.message || String(e) };
+    }
+  });
+
   // Hỗ trợ xuất Audit Log (Ethical Rule UC_11.03)
   handle('system-export-audit', async () => {
-    appendLog('system', 'System Audit Log exported by user.');
-    return { success: true, content: getAuditLogContent() };
+    const result = getAuditLogContent();
+    if (result.success) {
+      appendLog('system', 'System Audit Log exported by user.');
+    } else {
+      appendLog('system', `System Audit Log export blocked: ${result.error}`);
+    }
+    return result;
   });
 
   // Quản lý thư viện bổ sung cho Kịch bản (NPM Packages / Script modules)
@@ -432,6 +817,693 @@ function registerIpcHandlers(extra = {}) {
     catch (e) { return { success: false, error: e?.message || String(e) }; }
   });
 
+  // ── Element Picker: điều khiển browser từ UI picker panel ───────────────────
+
+  // Lấy URL trang hiện tại của profile đang chạy
+  handle('element-picker:get-url', async (_e, profileId) => {
+    try {
+      const { runningProfiles } = require('../state/runtime');
+      const running = runningProfiles.get(profileId);
+      if (!running) return { success: false, error: 'Profile not running' };
+      const pages = (running.context?.pages() || []).filter(p => !p.isClosed?.());
+      if (!pages.length) return { success: false, error: 'No pages open' };
+      return { success: true, url: pages[0].url() };
+    } catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  // Điều hướng trang browser tới URL mới
+  handle('element-picker:navigate', async (_e, profileId, url) => {
+    try {
+      const { runningProfiles } = require('../state/runtime');
+      const running = runningProfiles.get(profileId);
+      if (!running) return { success: false, error: 'Profile not running' };
+      const context = running.context;
+      if (!context) return { success: false, error: 'No context' };
+      let page = context.pages().find(p => !p.isClosed?.());
+      if (!page) page = await context.newPage();
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      return { success: true, url: page.url() };
+    } catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  // Đưa cửa sổ browser lên foreground
+  handle('element-picker:bring-to-front', async (_e, profileId) => {
+    try {
+      const { runningProfiles } = require('../state/runtime');
+      const running = runningProfiles.get(profileId);
+      if (!running) return { success: false, error: 'Profile not running' };
+      const page = (running.context?.pages() || []).find(p => !p.isClosed?.());
+      if (page) await page.bringToFront();
+      return { success: true };
+    } catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  // Bật chế độ hover-pick: inject script lắng nghe Ctrl+mouseover, tạo đầy đủ CSS/XPath/Text selectors
+  handle('element-picker:start-picking', async (_e, profileId) => {
+    try {
+      const { runningProfiles } = require('../state/runtime');
+      const running = runningProfiles.get(profileId);
+      if (!running) return { success: false, error: 'Profile not running' };
+      const page = (running.context?.pages() || []).find(p => !p.isClosed?.());
+      if (!page) return { success: false, error: 'No pages open' };
+
+      // Expose callback Node.js → browser (ignore if already exposed from previous picker open)
+      try {
+        await page.exposeFunction('__obt_ep_pick', (data) => {
+          for (const w of BrowserWindow.getAllWindows()) {
+            try { w.webContents.send('element-picker:selector-picked', data); } catch {}
+          }
+        });
+      } catch { /* already exposed — safe to ignore */ }
+
+      // Inject idempotent event listener with full selector generation
+      await page.evaluate(() => {
+        // ── CSS selector: tag + all classes (Tailwind-friendly), fallback to structural path
+        function getCssSelector(el) {
+          if (el.id) return '#' + CSS.escape(el.id);
+          const tag = el.tagName.toLowerCase();
+          if (el.classList && el.classList.length > 0) {
+            return tag + Array.from(el.classList).map(c => '.' + CSS.escape(c)).join('');
+          }
+          // structural fallback
+          const parts = [];
+          let cur = el;
+          while (cur && cur.nodeType === 1 && cur !== document.documentElement) {
+            if (cur.id) { parts.unshift('#' + CSS.escape(cur.id)); break; }
+            let sel = cur.nodeName.toLowerCase();
+            let nth = 1, sib = cur.previousElementSibling;
+            while (sib) { nth++; sib = sib.previousElementSibling; }
+            if (nth > 1) sel += ':nth-child(' + nth + ')';
+            parts.unshift(sel);
+            cur = cur.parentElement;
+          }
+          return parts.join(' > ') || tag;
+        }
+
+        // ── XPath: walk up to nearest ancestor with ID, then build path
+        function getXPath(el) {
+          const parts = [];
+          let cur = el;
+          while (cur && cur.nodeType === 1) {
+            if (cur.id) { parts.unshift('*[@id="' + cur.id + '"]'); break; }
+            const tag = cur.nodeName.toLowerCase();
+            const parent = cur.parentElement;
+            if (parent) {
+              const sameTag = Array.from(parent.children).filter(c => c.nodeName === cur.nodeName);
+              parts.unshift(sameTag.length > 1 ? tag + '[' + (sameTag.indexOf(cur) + 1) + ']' : tag);
+            } else {
+              parts.unshift(tag);
+            }
+            cur = parent;
+          }
+          return '//' + parts.join('/');
+        }
+
+        // ── Text selector: only for short single-line text
+        function getTextSelector(el) {
+          const text = (el.innerText || '').trim();
+          if (!text || text.length > 80 || text.includes('\n')) return null;
+          return 'text=' + text;
+        }
+
+        // Remove old listener before re-injecting (idempotent)
+        if (window.__obt_ep_handler) {
+          document.removeEventListener('mouseover', window.__obt_ep_handler, true);
+        }
+        // Highlight style
+        if (!document.getElementById('__obt_ep_style')) {
+          const s = document.createElement('style');
+          s.id = '__obt_ep_style';
+          s.textContent = '.__obt_ep_hl{outline:2px solid #00d2d3!important;outline-offset:2px!important;background:rgba(0,210,211,0.07)!important}';
+          document.head.appendChild(s);
+        }
+
+        window.__obt_ep_handler = function(e) {
+          if (!e.ctrlKey && !e.metaKey) return;
+          e.stopPropagation();
+          e.preventDefault();
+          const el = e.target;
+          document.querySelectorAll('.__obt_ep_hl').forEach(x => x.classList.remove('__obt_ep_hl'));
+          el.classList.add('__obt_ep_hl');
+
+          const rect = el.getBoundingClientRect();
+          const cssSelector = getCssSelector(el);
+
+          window.__obt_ep_pick({
+            // Selector variants
+            cssSelector,
+            xpath:        getXPath(el),
+            textSelector: getTextSelector(el),
+            // Element identity
+            tagName:     el.tagName.toLowerCase(),
+            id:          el.id || null,
+            classes:     el.className || null,
+            text:        (el.innerText || el.textContent || '').trim().slice(0, 300),
+            // Attributes
+            href:        el.getAttribute('href') || null,
+            src:         el.getAttribute('src') || null,
+            type:        el.getAttribute('type') || null,
+            name:        el.getAttribute('name') || null,
+            placeholder: el.getAttribute('placeholder') || null,
+            value:       el.value !== undefined ? String(el.value) : null,
+            // Geometry
+            position:    { x: Math.round(e.clientX), y: Math.round(e.clientY) },
+            boundingBox: {
+              x:      Math.round(rect.left),
+              y:      Math.round(rect.top),
+              width:  Math.round(rect.width),
+              height: Math.round(rect.height),
+            },
+          });
+        };
+        document.addEventListener('mouseover', window.__obt_ep_handler, true);
+      });
+      return { success: true };
+    } catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  // Tắt chế độ hover-pick, xoá listener và highlight
+  handle('element-picker:stop-picking', async (_e, profileId) => {
+    try {
+      const { runningProfiles } = require('../state/runtime');
+      const running = runningProfiles.get(profileId);
+      if (!running) return { success: true };
+      const page = (running.context?.pages() || []).find(p => !p.isClosed?.());
+      if (page) {
+        await page.evaluate(() => {
+          if (window.__obt_ep_handler) {
+            document.removeEventListener('mouseover', window.__obt_ep_handler, true);
+            window.__obt_ep_handler = null;
+          }
+          document.querySelectorAll('.__obt_ep_hl').forEach(x => x.classList.remove('__obt_ep_hl'));
+        }).catch(() => {});
+      }
+      return { success: true };
+    } catch (e) { return { success: true }; }
+  });
+
+  // Lấy thông tin chi tiết của element theo selector
+  handle('element-picker:get-element-info', async (_e, profileId, selector) => {
+    try {
+      const { runningProfiles } = require('../state/runtime');
+      const running = runningProfiles.get(profileId);
+      if (!running) return { success: false, error: 'Profile not running' };
+      const page = (running.context?.pages() || []).find(p => !p.isClosed?.());
+      if (!page) return { success: false, error: 'No pages' };
+      const info = await page.evaluate((sel) => {
+        try {
+          const el = document.querySelector(sel);
+          if (!el) return null;
+          const rect = el.getBoundingClientRect();
+          const attrs = {};
+          for (const a of el.attributes) attrs[a.name] = a.value;
+          return {
+            tagName: el.tagName.toLowerCase(),
+            id: el.id || null,
+            className: el.className || null,
+            text: (el.textContent || '').trim().slice(0, 300),
+            href: el.getAttribute('href') || null,
+            src: el.getAttribute('src') || null,
+            type: el.getAttribute('type') || null,
+            name: el.getAttribute('name') || null,
+            placeholder: el.getAttribute('placeholder') || null,
+            value: el.value !== undefined ? String(el.value) : null,
+            visible: el.offsetParent !== null,
+            rect: { top: Math.round(rect.top), left: Math.round(rect.left), width: Math.round(rect.width), height: Math.round(rect.height) },
+            attrs,
+          };
+        } catch { return null; }
+      }, selector);
+      return { success: true, info };
+    } catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  // Thực thi các action từ Element Picker (click, hover, fill, press key, scroll, nav)
+  handle('element-picker:action', async (_e, profileId, action, ...args) => {
+    try {
+      if (action === 'click-element') return await performAction(profileId, 'click.element', { selector: args[0], timeout: 5000 });
+      if (action === 'hover-element') return await performAction(profileId, 'hover', { selector: args[0], timeout: 5000 });
+      if (action === 'double-click') return await performAction(profileId, 'element.dblclick', { selector: args[0], timeout: 5000 });
+      if (action === 'click-point') return await performAction(profileId, 'mouse.click', { x: args[0], y: args[1] });
+      if (action === 'fill') return await performAction(profileId, 'input.fill', { selector: args[0], value: args[1], timeout: 5000 });
+      if (action === 'press-key') return await performAction(profileId, 'keyboard.pressKey', { key: args[0] });
+      if (action === 'nav-back') return await performAction(profileId, 'nav.back', {});
+      if (action === 'nav-forward') return await performAction(profileId, 'nav.forward', {});
+      if (action === 'nav-reload') return await performAction(profileId, 'nav.reload', {});
+      if (action === 'scroll') {
+        const { runningProfiles } = require('../state/runtime');
+        const running = runningProfiles.get(profileId);
+        if (!running) return { success: false, error: 'Profile not running' };
+        const page = (running.context?.pages() || []).find(p => !p.isClosed?.());
+        if (!page) return { success: false, error: 'No pages' };
+        await page.evaluate((dir) => window.scrollBy({ top: dir === 'up' ? -300 : 300, behavior: 'smooth' }), args[0]);
+        return { success: true };
+      }
+      return { success: false, error: `Unknown action: ${action}` };
+    } catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  // ── Macro CRUD & execution ──────────────────────────────────────────────
+  const { listMacrosInternal, getMacroInternal, saveMacroInternal, deleteMacroInternal } = require('../storage/macros');
+
+  handle('macro-list', async () => {
+    try { return { success: true, macros: await listMacrosInternal() }; }
+    catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  handle('macro-get', async (_e, id) => {
+    try { return await getMacroInternal(id); }
+    catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  handle('macro-save', async (_e, macro) => {
+    try { return await saveMacroInternal(macro); }
+    catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  handle('macro-delete', async (_e, id) => {
+    try { return await deleteMacroInternal(id); }
+    catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  // Bug #3 fix: thêm handle 'macro-stop' để hủy giữa chừng
+  handle('macro-stop', (_e, profileId) => {
+    const state = macroRunState.get(profileId);
+    if (state) state.cancelled = true;
+    return { success: true };
+  });
+
+  handle('macro-run', async (_e, macroId, profileId) => {
+    try {
+      const result = await getMacroInternal(macroId);
+      if (!result.success) return result;
+      const macro = result.macro;
+      const { runningProfiles } = require('../state/runtime');
+      if (!runningProfiles.has(profileId)) return { success: false, error: 'Profile is not running' };
+      const runState = { cancelled: false };
+      macroRunState.set(profileId, runState);
+      // Helper: lấy page hiện tại của profile
+      const getPage = () => {
+        const rp = runningProfiles.get(profileId);
+        return (rp?.context?.pages() || []).find(p => !p.isClosed?.()) || null;
+      };
+      // Helper: chuẩn hoá URL để so sánh bỏ qua query/fragment
+      const urlBase = u => { try { const p = new URL(u); return p.origin + p.pathname; } catch { return u; } };
+      try {
+        for (let i = 0; i < macro.steps.length; i++) {
+          if (runState.cancelled) return { success: false, error: 'Macro stopped by user', stopped: true };
+          const step = macro.steps[i];
+          if (step.delay && step.delay > 0) {
+            const deadline = Date.now() + step.delay;
+            while (Date.now() < deadline) {
+              if (runState.cancelled) return { success: false, error: 'Macro stopped by user', stopped: true };
+              await new Promise(r => setTimeout(r, Math.min(100, deadline - Date.now())));
+            }
+          }
+          if (runState.cancelled) return { success: false, error: 'Macro stopped by user', stopped: true };
+
+          // Ghi URL TRƯỚC khi thực thi step — dùng để phát hiện navigation sau click
+          const nextStep = macro.steps[i + 1];
+          const isClickWithNavNext = (step.type === 'click.element' || step.type === 'element.dblclick')
+            && nextStep && nextStep.type === 'nav.goto';
+          const pageBeforeAction = isClickWithNavNext ? getPage() : null;
+          const urlBeforeAction = pageBeforeAction ? pageBeforeAction.url() : null;
+
+          // Thực thi step và LOG kết quả (trước đây kết quả bị nuốt im lặng)
+          let actionResult;
+          try {
+            actionResult = await performAction(profileId, step.type, step.params || {});
+          } catch (e) {
+            return { success: false, error: `Step ${i + 1} "${step.label || step.type}" failed: ${e?.message || e}`, stepIndex: i };
+          }
+          // Log nếu action trả về lỗi (performAction không throw, chỉ return {success:false})
+          if (actionResult && !actionResult.success) {
+            appendLog(profileId, `Macro: step ${i + 1} "${step.label || step.type}" returned error: ${actionResult.error || 'unknown'}`);
+          }
+
+          // Bug #3 fix (v6): Sau click.element có nav.goto tiếp theo
+          if (isClickWithNavNext) {
+            const page = getPage();
+            const recordedUrl = nextStep.params?.url;
+            let navigationSucceeded = false;
+            appendLog(profileId, `Macro: click done, checking navigation/SPA url changes...`);
+            if (page) {
+              try {
+                // Kiểm tra xem URL hiện tại đã tương đương với URL đích hay chưa (đặc biệt hữu ích cho Shorts/Reels/Video ngẫu nhiên)
+                const currentUrl = page.url();
+                if (isUrlEquivalent(currentUrl, recordedUrl)) {
+                  navigationSucceeded = true;
+                  appendLog(profileId, `Macro: already on equivalent page → ${currentUrl}`);
+                } else {
+                  let waitPattern;
+                  if (recordedUrl) {
+                    const u = new URL(recordedUrl);
+                    // Hỗ trợ matching thông minh cho các nền tảng video ngắn/dài
+                    if (u.pathname.startsWith('/shorts/')) {
+                      waitPattern = u.origin + '/shorts/**';
+                    } else if (u.pathname.startsWith('/watch')) {
+                      waitPattern = u.origin + '/watch**';
+                    } else if (u.pathname.startsWith('/reels/')) {
+                      waitPattern = u.origin + '/reels/**';
+                    } else {
+                      waitPattern = u.origin + u.pathname + '**';
+                    }
+                  }
+                  
+                  if (waitPattern) {
+                    await page.waitForURL(waitPattern, { timeout: 10000 });
+                  } else {
+                    const prevUrl = urlBeforeAction;
+                    await page.waitForURL(u => u.toString() !== prevUrl, { timeout: 10000 });
+                  }
+                  
+                  // Double check equivalence after waiting
+                  if (isUrlEquivalent(page.url(), recordedUrl) || page.url() !== urlBeforeAction) {
+                    navigationSucceeded = true;
+                    appendLog(profileId, `Macro: navigation complete → ${page.url()}`);
+                  }
+                }
+              } catch {
+                appendLog(profileId, `Macro: click did not navigate. Trying Enter key as fallback...`);
+              }
+ 
+              // FALLBACK 1: Nếu click không navigate, nhấn Enter để submit form.
+              // Chỉ nhấn Enter khi tiêu điểm nằm ở một trường nhập liệu (:visible input), 
+              // tránh nhấn Enter khi đang focus vào link như "Forgot email?".
+              if (!navigationSucceeded) {
+                try {
+                  const activeInput = page.locator('input:visible').first();
+                  if (await activeInput.count() > 0) {
+                    await activeInput.focus();
+                    await page.keyboard.press('Enter');
+                    appendLog(profileId, `Macro: Enter key pressed on active input field`);
+                    // Chờ navigation sau Enter
+                    let waitPattern2;
+                    if (recordedUrl) {
+                      const u = new URL(recordedUrl);
+                      if (u.pathname.startsWith('/shorts/')) {
+                        waitPattern2 = u.origin + '/shorts/**';
+                      } else if (u.pathname.startsWith('/watch')) {
+                        waitPattern2 = u.origin + '/watch**';
+                      } else if (u.pathname.startsWith('/reels/')) {
+                        waitPattern2 = u.origin + '/reels/**';
+                      } else {
+                        waitPattern2 = u.origin + u.pathname + '**';
+                      }
+                    }
+                    if (waitPattern2) {
+                      await page.waitForURL(waitPattern2, { timeout: 15000 });
+                    } else {
+                      const prevUrl = urlBeforeAction;
+                      await page.waitForURL(u => u.toString() !== prevUrl, { timeout: 15000 });
+                    }
+                    
+                    if (isUrlEquivalent(page.url(), recordedUrl) || page.url() !== urlBeforeAction) {
+                      navigationSucceeded = true;
+                      appendLog(profileId, `Macro: Enter key worked! Navigated → ${page.url()}`);
+                    }
+                  } else {
+                    appendLog(profileId, `Macro: No visible input field found to press Enter`);
+                  }
+                } catch {
+                  appendLog(profileId, `Macro: Enter key fallback did not navigate. URL still: ${page?.url()}`);
+                }
+              }
+            }
+            if (navigationSucceeded) {
+              i++; // navigation thành công → bỏ qua nav.goto
+            } else {
+              // Cả click lẫn Enter đều thất bại → thực thi nav.goto làm fallback cuối
+              appendLog(profileId, `Macro: executing nav.goto as last resort fallback`);
+              // KHÔNG increment i → loop sẽ thực thi nav.goto ở vòng tiếp
+            }
+          }
+        }
+        return { success: true };
+      } finally {
+        macroRunState.delete(profileId);
+      }
+    } catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  // ── Macro Recording ──────────────────────────────────────────────────────
+  handle('macro-record-start', async (_e, profileId) => {
+    try {
+      const { runningProfiles } = require('../state/runtime');
+      const running = runningProfiles.get(profileId);
+      if (!running) return { success: false, error: 'Profile is not running. Please launch the profile first.' };
+      const page = (running.context?.pages() || []).find(p => !p.isClosed?.());
+      if (!page) return { success: false, error: 'No pages open in this profile.' };
+
+      const prev = macroRecorders.get(profileId);
+      if (prev) { try { prev.cleanup(); } catch {} }
+
+      const sendStep = (step) => {
+        for (const w of BrowserWindow.getAllWindows()) {
+          try { w.webContents.send('macro:record-step', { profileId, step }); } catch {}
+        }
+      };
+
+      let lastUrl = page.url();
+      let navActive = false;
+      setTimeout(() => { navActive = true; }, 400);
+
+      const activeCleanups = [];
+      const context = running.context;
+
+      const setupPageForRecording = async (p) => {
+        try {
+          await p.exposeFunction('__obt_macro_rec', (data) => sendStep(data));
+        } catch { /* already exposed */ }
+
+        // Navigation listener on this page
+        const localNavHandler = (frame) => {
+          try {
+            if (!navActive || frame.parentFrame()) return;
+            const url = frame.url();
+            if (!url || url === 'about:blank') return;
+            const base = u => u.split('#')[0];
+            if (base(url) === base(lastUrl)) { lastUrl = url; return; }
+            lastUrl = url;
+            sendStep({ type: 'nav.goto', params: { url }, label: '', delay: 0 });
+          } catch {}
+        };
+        p.on('framenavigated', localNavHandler);
+
+        // Add Init Script on this page to setup the recorder DOM listeners
+        await p.addInitScript(() => {
+          // Dọn listener cũ (dành cho SPA navigation — window context không reset)
+          if (window.__obt_rec_click)   { document.removeEventListener('click',   window.__obt_rec_click,   true); }
+          if (window.__obt_rec_change)  { document.removeEventListener('change',  window.__obt_rec_change,  true); }
+          if (window.__obt_rec_keydown) { document.removeEventListener('keydown', window.__obt_rec_keydown, true); }
+          if (window.__obt_rec_scroll)  { document.removeEventListener('scroll',  window.__obt_rec_scroll,  true); clearTimeout(window.__obt_scroll_timer); }
+
+          function getCssSel(el) {
+            try {
+              if (el.id) {
+                const escapedId = CSS.escape(el.id);
+                if (document.querySelectorAll('#' + escapedId).length === 1) {
+                  return '#' + escapedId;
+                }
+              }
+              const dt = el.getAttribute && el.getAttribute('data-testid');
+              if (dt) return '[data-testid="' + dt.replace(/"/g, '\\"') + '"]';
+
+              // Tự động leo lên ancestor gần nhất là button/a/label/[role=button] nếu có,
+              // để lấy selector đại diện cho phần tử tương tác (ngoại trừ input/textarea/select).
+              const tag = el.tagName.toLowerCase();
+              if (tag !== 'input' && tag !== 'textarea' && tag !== 'select') {
+                let anc = el;
+                while (anc && anc !== document.documentElement) {
+                  const at = anc.tagName.toLowerCase();
+                  if (at === 'button' || at === 'a' || at === 'label' ||
+                      (anc.getAttribute && anc.getAttribute('role') === 'button')) {
+                    el = anc;
+                    if (el.id) {
+                      const escapedAncId = CSS.escape(el.id);
+                      if (document.querySelectorAll('#' + escapedAncId).length === 1) {
+                        return '#' + escapedAncId;
+                      }
+                    }
+                    break;
+                  }
+                  anc = anc.parentElement;
+                }
+              }
+              const finalTag = el.tagName.toLowerCase();
+
+              // 1. type="password" (đặc thù và cực kỳ an toàn cho password field)
+              if (finalTag === 'input' && el.getAttribute && el.getAttribute('type') === 'password') {
+                return 'input[type="password"]';
+              }
+
+              // 2. name attribute (form elements)
+              const nm = el.getAttribute && el.getAttribute('name');
+              if (nm) return finalTag + '[name="' + nm.replace(/"/g, '\\"') + '"]';
+
+              // 3. jsname (Google automation attribute)
+              const jn = el.getAttribute && el.getAttribute('jsname');
+              if (jn) return finalTag + '[jsname="' + jn + '"]';
+
+              // 4. aria-label
+              const al = el.getAttribute && el.getAttribute('aria-label');
+              if (al && al.length < 80) return finalTag + '[aria-label="' + al.replace(/"/g, '\\"') + '"]';
+
+              // 5. title attribute (rất hữu ích cho các menu, icon hover)
+              const tt = el.getAttribute && el.getAttribute('title');
+              if (tt && tt.length < 80) return finalTag + '[title="' + tt.replace(/"/g, '\\"') + '"]';
+
+              // 6. href attribute (đặc biệt tốt cho thẻ a)
+              if (finalTag === 'a') {
+                const hr = el.getAttribute && el.getAttribute('href');
+                if (hr && hr.length < 150 && !hr.startsWith('javascript:')) {
+                  return 'a[href="' + hr.replace(/"/g, '\\"') + '"]';
+                }
+              }
+
+              // class-based fallback
+              if (el.classList && el.classList.length > 0) {
+                const cls = Array.from(el.classList).slice(0, 3)
+                  .map(c => { try { return '.' + CSS.escape(c); } catch { return ''; } }).join('');
+                return finalTag + cls;
+              }
+              // structural fallback
+              const parts = []; let cur = el;
+              while (cur && cur.nodeType === 1 && cur !== document.documentElement) {
+                if (cur.id) {
+                  const escapedCurId = CSS.escape(cur.id);
+                  if (document.querySelectorAll('#' + escapedCurId).length === 1) {
+                    parts.unshift('#' + escapedCurId);
+                    break;
+                  }
+                }
+                let sel = cur.nodeName.toLowerCase();
+                let nth = 1, sib = cur.previousElementSibling;
+                while (sib) { nth++; sib = sib.previousElementSibling; }
+                if (nth > 1) sel += ':nth-child(' + nth + ')';
+                parts.unshift(sel); cur = cur.parentElement;
+              }
+              return parts.join(' > ') || finalTag;
+            } catch { return el.tagName ? el.tagName.toLowerCase() : 'unknown'; }
+          }
+
+          // Click listener — kiểm tra __obt_macro_rec tại thời điểm event (lazy)
+          window.__obt_rec_click = function(e) {
+            try {
+              if (typeof window.__obt_macro_rec !== 'function') return;
+              const el = e.target;
+              if (!el || !el.tagName) return;
+              const tag = el.tagName.toLowerCase();
+              if (['select', 'option'].includes(tag)) return;
+              if (['input', 'textarea'].includes(tag)) {
+                const t = (el.getAttribute('type') || 'text').toLowerCase();
+                if (!['submit', 'button', 'checkbox', 'radio', 'image'].includes(t)) return;
+              }
+              window.__obt_macro_rec({ type: 'click.element', params: { selector: getCssSel(el) },
+                label: (el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '').trim().slice(0, 60), delay: 0 });
+            } catch {}
+          };
+
+          // Change listener (input/textarea/select)
+          window.__obt_rec_change = function(e) {
+            try {
+              if (typeof window.__obt_macro_rec !== 'function') return;
+              const el = e.target;
+              if (!el || !['input', 'textarea', 'select'].includes(el.tagName.toLowerCase())) return;
+              window.__obt_macro_rec({ type: 'input.fill', params: { selector: getCssSel(el), value: el.value || '' },
+                label: (el.placeholder || el.name || el.getAttribute('aria-label') || '').trim().slice(0, 60), delay: 0 });
+            } catch {}
+          };
+
+          // Keydown listener
+          const SKEYS = new Set(['Enter','Tab','Escape','F1','F2','F3','F4','F5','F12','Backspace','Delete',
+            'ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End','PageUp','PageDown']);
+          window.__obt_rec_keydown = function(e) {
+            try {
+              if (typeof window.__obt_macro_rec !== 'function') return;
+              if (SKEYS.has(e.key)) window.__obt_macro_rec({ type: 'keyboard.pressKey', params: { key: e.key }, label: 'Press ' + e.key, delay: 0 });
+            } catch {}
+          };
+
+          // Scroll listener với debounce 400ms
+          window.__obt_scroll_timer = null;
+          window.__obt_rec_scroll = function() {
+            clearTimeout(window.__obt_scroll_timer);
+            window.__obt_scroll_timer = setTimeout(function() {
+              try {
+                if (typeof window.__obt_macro_rec !== 'function') return;
+                var sx = Math.round(window.scrollX), sy = Math.round(window.scrollY);
+                window.__obt_macro_rec({ type: 'page.scroll', params: { x: sx, y: sy },
+                  label: 'Scroll to (' + sx + ', ' + sy + ')', delay: 300 });
+              } catch {}
+            }, 400);
+          };
+
+          document.addEventListener('click',   window.__obt_rec_click,   true);
+          document.addEventListener('change',  window.__obt_rec_change,  true);
+          document.addEventListener('keydown', window.__obt_rec_keydown, true);
+          document.addEventListener('scroll',  window.__obt_rec_scroll,  true);
+        });
+
+        // Inject vào trang HIỆN TẠI (addInitScript chỉ chạy trên navigation tiếp theo)
+        await injectMacroRecorderScript(p);
+
+        // Đăng ký dọn dẹp cho trang này
+        activeCleanups.push(() => {
+          try { p.off('framenavigated', localNavHandler); } catch {}
+          p.evaluate(() => {
+            if (window.__obt_rec_click)   { document.removeEventListener('click',   window.__obt_rec_click,   true); window.__obt_rec_click   = null; }
+            if (window.__obt_rec_change)  { document.removeEventListener('change',  window.__obt_rec_change,  true); window.__obt_rec_change  = null; }
+            if (window.__obt_rec_keydown) { document.removeEventListener('keydown', window.__obt_rec_keydown, true); window.__obt_rec_keydown = null; }
+            if (window.__obt_rec_scroll)  { document.removeEventListener('scroll',  window.__obt_rec_scroll,  true); clearTimeout(window.__obt_scroll_timer); window.__obt_rec_scroll = null; window.__obt_scroll_timer = null; }
+          }).catch(() => {});
+        });
+      };
+
+      // Đăng ký cho toàn bộ trang/tab đang mở
+      const openPages = running.context?.pages() || [];
+      for (const p of openPages) {
+        if (!p.isClosed()) {
+          await setupPageForRecording(p);
+        }
+      }
+
+      // Theo dõi và đăng ký tự động cho các tab/trang mới mở trong tương lai
+      const onPageCreated = async (newPage) => {
+        try {
+          appendLog(profileId, `Macro recorder: detected new tab/page opening`);
+          await setupPageForRecording(newPage);
+        } catch (err) {
+          appendLog(profileId, `Macro recorder: failed setting up new tab — ${err.message}`);
+        }
+      };
+      if (context) {
+        context.on('page', onPageCreated);
+      }
+
+      macroRecorders.set(profileId, {
+        cleanup: () => {
+          if (context) {
+            try { context.off('page', onPageCreated); } catch {}
+          }
+          for (const c of activeCleanups) {
+            try { c(); } catch {}
+          }
+          macroRecorders.delete(profileId);
+        },
+      });
+      return { success: true };
+    } catch (e) { return { success: false, error: e?.message || String(e) }; }
+  });
+
+  handle('macro-record-stop', async (_e, profileId) => {
+    try {
+      const rec = macroRecorders.get(profileId);
+      if (rec) rec.cleanup();
+      return { success: true };
+    } catch { return { success: true }; }
+  });
+
   // Các bộ điều khiển Máy chủ Local REST API (Chỉ kích hoạt nếu restServer được truyền vào lúc khởi động)
   if (extra.restServer) {
     const rest = extra.restServer;
@@ -455,6 +1527,28 @@ function registerIpcHandlers(extra = {}) {
   }
 
   if (extra.register) { try { extra.register(ipcMain); } catch { } }
+
+  // ── Auto-update ─────────────────────────────────────────────────────────────
+  const { checkForUpdate, downloadAndInstall } = require('../services/UpdateService');
+
+  handle('update:check', async () => {
+    try {
+      return await checkForUpdate();
+    } catch (e) {
+      return { hasUpdate: false, error: e?.message };
+    }
+  });
+
+  handle('update:install', async (_e, release) => {
+    try {
+      appendLog('system', `[Update] Downloading v${release?.version}...`);
+      await downloadAndInstall(release);
+      return { success: true };
+    } catch (e) {
+      appendLog('system', `[Update] Download failed: ${e?.message}`);
+      return { success: false, error: e?.message };
+    }
+  });
 }
 
 module.exports = { registerIpcHandlers };

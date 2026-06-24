@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Play, Plus, Trash2, Search, FileCode, RefreshCw, ChevronRight, X, Download, Upload, Edit2, Pause, Square } from 'lucide-react';
+import { Play, Plus, Trash2, Search, FileCode, RefreshCw, ChevronRight, X, Download, Upload, Edit2, Pause, Square, Clock } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 
 /* ═══════════════ API Reference Data ═══════════════ */
@@ -78,37 +78,6 @@ const API_REF = [
 
 const totalMethods = API_REF.reduce((s, c) => s + c.methods.length, 0);
 
-const CRON_PRESETS = [
-  { label: 'Every 5m', cron: '*/5 * * * *' },
-  { label: 'Every 15m', cron: '*/15 * * * *' },
-  { label: 'Every 30m', cron: '*/30 * * * *' },
-  { label: 'Hourly', cron: '0 * * * *' },
-  { label: 'Daily 9am', cron: '0 9 * * *' },
-  { label: 'Midnight', cron: '0 0 * * *' },
-  { label: 'Mon 9am', cron: '0 9 * * 1' },
-];
-
-const MINUTE_OPTIONS = ['* (every)', '*/5', '*/10', '*/15', '*/30', '0', '15', '30', '45'];
-const HOUR_OPTIONS = ['* (every)', '0', '1', '2', '3', '6', '8', '9', '12', '15', '18', '21'];
-const DAY_OPTIONS = ['* (every)', '1', '5', '10', '15', '20', '25'];
-const MONTH_OPTIONS = ['* (every)', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
-const WEEKDAY_OPTIONS = ['* (every)', '0', '1', '2', '3', '4', '5', '6'];
-
-function describeCron(expr) {
-  if (!expr) return '';
-  const parts = expr.split(' ');
-  if (parts.length !== 5) return expr;
-  const [min, hr, day, mon, wd] = parts;
-  if (min.startsWith('*/')) return `Every ${min.slice(2)} minutes`;
-  if (min === '0' && hr === '*') return 'Every hour';
-  if (min === '0' && hr === '0' && day === '*' && mon === '*' && wd === '*') return 'Every day at midnight';
-  if (min === '0' && hr !== '*' && day === '*' && mon === '*' && wd === '*') return `Every day at ${hr}:00`;
-  if (min === '0' && hr !== '*' && wd !== '*') {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    return `${days[Number(wd)] || 'Day ' + wd} at ${hr}:00`;
-  }
-  return expr;
-}
 
 const DEFAULT_CODE = `// Available globals: page, cdp, profileId, log()
 // Type 'page.' or 'cdp.' to see autocomplete
@@ -157,18 +126,16 @@ function ScriptsTab({ profiles }) {
     // Bulk run modal
     const [bulkRunScript, setBulkRunScript] = useState(null);
 
-    // Schedule state
-    const [scheduleEnabled, setScheduleEnabled] = useState(false);
-    const [scheduleProfileId, setScheduleProfileId] = useState('');
-    const [cronExpr, setCronExpr] = useState('*/5 * * * *');
-    const [cronMinute, setCronMinute] = useState('*/5');
-    const [cronHour, setCronHour] = useState('* (every)');
-    const [cronDay, setCronDay] = useState('* (every)');
-    const [cronMonth, setCronMonth] = useState('* (every)');
-    const [cronWeekday, setCronWeekday] = useState('* (every)');
-
     // Browser mode
     const [browserMode, setBrowserMode] = useState('visible');
+    // Auto-schedule (cron) state — tách riêng để dễ quản lý UI
+    const [cronEnabled, setCronEnabled] = useState(false);
+    const [cronSchedule, setCronSchedule] = useState('');       // cron expression: "0 9 * * 1-5"
+    const [cronProfileId, setCronProfileId] = useState('');     // profile được chỉ định chạy script tự động
+    const [cronError, setCronError] = useState('');             // Bug #5: lỗi validate cron expression
+    const [runNowLoading, setRunNowLoading] = useState(false);  // Bug #6: trạng thái nút Test Run Now
+    // Center panel tab: 'settings' | 'apiref'
+    const [settingsTab, setSettingsTab] = useState('settings');
 
     const load = useCallback(async () => {
         try {
@@ -179,52 +146,94 @@ function ScriptsTab({ profiles }) {
 
     useEffect(() => { load(); }, [load]);
 
-    // Sync cron fields → expression
-    useEffect(() => {
-        const clean = v => v.replace(' (every)', '');
-        const expr = `${clean(cronMinute)} ${clean(cronHour)} ${clean(cronDay)} ${clean(cronMonth)} ${clean(cronWeekday)}`;
-        setCronExpr(expr);
-    }, [cronMinute, cronHour, cronDay, cronMonth, cronWeekday]);
-
-    const applyCronPreset = (cron) => {
-        setCronExpr(cron);
-        const [m, h, d, mo, w] = cron.split(' ');
-        setCronMinute(m === '*' ? '* (every)' : m);
-        setCronHour(h === '*' ? '* (every)' : h);
-        setCronDay(d === '*' ? '* (every)' : d);
-        setCronMonth(mo === '*' ? '* (every)' : mo);
-        setCronWeekday(w === '*' ? '* (every)' : w);
-    };
-
     const handleNew = () => {
         setEditing({ id: null, name: '', description: '', code: DEFAULT_CODE });
         setSelectedId(null);
         setRunResult(null);
-        setScheduleEnabled(false);
         setBrowserMode('visible');
+        // Reset schedule về mặc định: tắt, không có cron, không có profile
+        setCronEnabled(false);
+        setCronSchedule('');
+        setCronProfileId('');
+        setCronError('');        // reset lỗi validate khi tạo script mới
+        setSettingsTab('settings');
+    };
+
+    // Bug #5 fix: reset cronError mỗi khi expression thay đổi
+    const handleCronScheduleChange = (val) => {
+        setCronSchedule(val);
+        setCronError('');
+    };
+
+    const describeCron = (expr) => {
+        if (!expr || !expr.trim()) return '';
+        const knownMap = {
+            '* * * * *':     'Every minute',
+            '*/5 * * * *':   'Every 5 minutes',
+            '*/10 * * * *':  'Every 10 minutes',
+            '*/15 * * * *':  'Every 15 minutes',
+            '*/30 * * * *':  'Every 30 minutes',
+            '0 * * * *':     'Every hour (at minute 0)',
+            '0 9 * * *':     'Every day at 9:00 AM',
+            '0 0 * * *':     'Every day at midnight',
+            '0 9 * * 1-5':   'Mon-Fri at 9:00 AM',
+            '0 0 * * 0':     'Every Sunday at midnight',
+            '0 0 1 * *':     '1st of every month at midnight',
+        };
+        if (knownMap[expr.trim()]) return knownMap[expr.trim()];
+        // Basic description from 5 fields
+        const parts = expr.trim().split(/\s+/);
+        if (parts.length === 5) return `Schedule: min=${parts[0]} hour=${parts[1]} day=${parts[2]} month=${parts[3]} weekday=${parts[4]}`;
+        return expr.trim();
     };
 
     const handleSelect = (s) => {
         setEditing({ ...s });
         setSelectedId(s.id);
         setRunResult(null);
-        // Load schedule from script if exists
-        setScheduleEnabled(!!s.schedule?.enabled);
-        if (s.schedule?.cron) applyCronPreset(s.schedule.cron);
-        if (s.schedule?.profileId) setScheduleProfileId(s.schedule.profileId);
         setBrowserMode(s.browserMode || 'visible');
+        // Nạp lại schedule từ script đã lưu (fallback an toàn nếu field thiếu)
+        setCronEnabled(!!s.schedule?.enabled);
+        setCronSchedule(s.schedule?.cron || '');
+        setCronProfileId(s.schedule?.profileId || '');
+        setCronError('');        // reset lỗi validate khi chọn script khác
+        setSettingsTab('settings');
     };
 
     const handleSave = async () => {
         if (!editing) return;
+        if (!window.confirm('Are you sure you want to save this script?')) return;
+        // Validate schedule trước khi gửi xuống main process — tránh lưu state không hợp lệ
+        if (cronEnabled) {
+            if (!cronSchedule.trim()) {
+                alert('Please enter a cron expression (e.g., "0 9 * * 1-5") when Auto-schedule is enabled.');
+                return;
+            }
+            // Bug #5 fix: validate cron expression qua main process (node-cron.validate)
+            const validation = await window.electronAPI.validateCron(cronSchedule);
+            if (!validation?.valid) {
+                setCronError(`Invalid cron expression: "${cronSchedule.trim()}" — Please use a 5-field format, e.g., "0 9 * * 1-5"`);
+                return;
+            }
+            setCronError('');
+            if (!cronProfileId) {
+                alert('Please select a profile to run the script automatically.');
+                return;
+            }
+        }
         try {
             const res = await window.electronAPI.saveScript({
                 id: editing.id,
                 name: editing.name,
                 description: editing.description,
                 code: editing.code,
-                schedule: scheduleEnabled ? { enabled: true, cron: cronExpr, profileId: scheduleProfileId } : { enabled: false },
                 browserMode,
+                // Gửi schedule dưới dạng nested object — khớp shape mà saveScriptInternal mong đợi
+                schedule: {
+                    enabled: cronEnabled,
+                    cron: cronSchedule.trim(),
+                    profileId: cronProfileId,
+                },
             });
             if (!res?.success) { alert(res?.error || 'Save failed'); return; }
             await load();
@@ -298,13 +307,19 @@ function ScriptsTab({ profiles }) {
         setEditing(prev => ({ ...prev, code: (prev.code || '') + '\n' + snippet + '\n' }));
     };
 
-    const handleExportJson = () => {
-        if (!editing) return;
-        const blob = new Blob([JSON.stringify(editing, null, 2)], { type: 'application/json' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `${editing.name || 'script'}.json`;
-        a.click();
+    const handleExportJson = async () => {
+        try {
+            const res = await window.electronAPI.listScripts();
+            const list = Array.isArray(res) ? res : (res?.scripts || []);
+            const exportData = list.map(({ id, name, description, code }) =>
+                ({ id, name, description, code })
+            );
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `scripts-export-${new Date().toISOString().slice(0, 10)}.json`;
+            a.click();
+        } catch { alert('Export failed'); }
     };
 
     const handleImportJson = () => {
@@ -317,8 +332,16 @@ function ScriptsTab({ profiles }) {
             const text = await file.text();
             try {
                 const data = JSON.parse(text);
-                setEditing({ id: null, name: data.name || 'Imported', description: data.description || '', code: data.code || '' });
-                setSelectedId(null);
+                const list = Array.isArray(data) ? data : [data];
+                let imported = 0;
+                for (const s of list) {
+                    if (!s.name && !s.code) continue;
+                    await window.electronAPI.saveScript({ id: null, name: s.name || 'Imported', description: s.description || '', code: s.code || '' });
+                    imported++;
+                }
+                const updated = await window.electronAPI.listScripts();
+                setScripts(Array.isArray(updated) ? updated : (updated?.scripts || []));
+                alert(`Imported ${imported} script(s)`);
             } catch { alert('Invalid JSON file'); }
         };
         input.click();
@@ -327,9 +350,9 @@ function ScriptsTab({ profiles }) {
     const filtered = scripts.filter(s => !filter || (s.name || '').toLowerCase().includes(filter.toLowerCase()));
 
     return (
-        <div className="flex-1 flex flex-row rounded-lg gap-[1px] overflow-hidden" style={{ background: 'var(--border)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+        <div className="flex-1 flex flex-row rounded-lg gap-[1px] overflow-x-auto overflow-y-hidden" style={{ background: 'var(--border)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
             {/* ═══ Left Sidebar — Script Cards ═══ */}
-            <div className="w-[280px] flex flex-col" style={{ background: 'var(--card)' }}>
+            <div className="w-[280px] shrink-0 flex flex-col" style={{ background: 'var(--card)' }}>
                 {/* Search + New */}
                 <div className="px-3 py-2 flex gap-2 items-center" style={{ borderBottom: '1px solid var(--border)' }}>
                     <div className="flex-1 relative">
@@ -366,6 +389,12 @@ function ScriptsTab({ profiles }) {
                                     {state === 'error' && <div className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />}
                                     {state === 'idle' && <FileCode size={12} className="shrink-0" style={{ color: 'var(--muted)' }} />}
                                     <span className="text-[0.75rem] font-semibold truncate flex-1" style={{ color: isActive ? 'var(--primary)' : 'var(--fg)' }}>{s.name || '(untitled)'}</span>
+                                    {s.schedule?.enabled && (
+                                        <div className="flex items-center gap-1 px-1.5 py-[2px] rounded bg-indigo-500/15 border border-indigo-500/30 shrink-0" title={`Auto-schedule active: ${s.schedule.cron}`}>
+                                            <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                                            <span className="text-[0.55rem] font-bold text-indigo-300 tracking-wider">AUTO</span>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Description */}
@@ -441,154 +470,247 @@ function ScriptsTab({ profiles }) {
 
             </div>
 
-            {/* ═══ Center Editor Area ═══ */}
-            <div className="flex-1 flex flex-col" style={{ background: 'var(--card)' }}>
-                {editing ? (
-                    <div className="flex flex-col h-full">
-                        {/* Header: Name, Description, Actions */}
-                        <div className="p-3 flex flex-col gap-2" style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)' }}>
-                            <div className="flex gap-3 items-center">
-                                <span className="text-[0.85rem] font-semibold" style={{ color: 'var(--fg)' }}>{editing.id ? 'Edit Script' : 'New Script'}</span>
-                                <div className="flex-1" />
+            {/* ═══ Center Settings Panel + Right Editor ═══ */}
+            {editing ? (
+                <>
+                    {/* Center: Settings / API Reference tabs */}
+                    <div className="w-[370px] shrink-0 flex flex-col" style={{ background: 'var(--card)', borderRight: '1px solid var(--border)' }}>
+                        {/* Header */}
+                        <div className="px-3 py-2 flex items-center justify-between" style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)' }}>
+                            <span className="text-[0.85rem] font-semibold" style={{ color: 'var(--fg)' }}>{editing.id ? 'Edit Script' : 'New Script'}</span>
+                            <div className="flex gap-2">
                                 <button className="btn btn-secondary text-[0.7rem]" onClick={() => { setEditing(null); setSelectedId(null); }}>Cancel</button>
-                                <button className="btn btn-secondary text-[0.7rem] flex items-center gap-1" onClick={handleExportJson}><Download size={12} /> Export JSON</button>
                                 <button className="btn btn-success text-[0.7rem]" onClick={handleSave}>Save</button>
                             </div>
-                            <div className="flex gap-3">
-                                <div className="flex-1">
-                                    <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>Name</label>
-                                    <input className="w-full rounded px-2 py-1.5 text-[0.75rem]"
-                                        style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
-                                        value={editing.name} onChange={e => setEditing(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Login to site" />
-                                </div>
-                                <div className="flex-1">
-                                    <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>Description (optional)</label>
-                                    <input className="w-full rounded px-2 py-1.5 text-[0.75rem]"
-                                        style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
-                                        value={editing.description} onChange={e => setEditing(p => ({ ...p, description: e.target.value }))} placeholder="What does this script do?" />
-                                </div>
-                            </div>
+                        </div>
+                        {/* Tab bar */}
+                        <div className="flex" style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
+                            {[{ id: 'settings', label: 'SETTINGS' }, { id: 'apiref', label: 'API REFERENCE' }].map(t => (
+                                <button key={t.id}
+                                    className="px-4 py-2 text-[0.7rem] font-semibold tracking-wide transition"
+                                    style={{
+                                        color: settingsTab === t.id ? 'var(--primary)' : 'var(--muted)',
+                                        borderBottom: settingsTab === t.id ? '2px solid var(--primary)' : '2px solid transparent',
+                                        background: 'transparent',
+                                    }}
+                                    onClick={() => setSettingsTab(t.id)}>{t.label}</button>
+                            ))}
                         </div>
 
-                        {/* Auto-run Schedule */}
-                        <div className="px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-[0.78rem] font-semibold" style={{ color: 'var(--fg)' }}>Auto-run schedule</span>
-                                <label className="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" checked={scheduleEnabled} onChange={e => setScheduleEnabled(e.target.checked)} className="sr-only peer" />
-                                    <div className="w-9 h-5 rounded-full peer-checked:bg-blue-500 transition" style={{ background: scheduleEnabled ? 'var(--primary)' : 'var(--border2)' }}>
-                                        <div className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform mt-0.5 ${scheduleEnabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
-                                    </div>
-                                </label>
-                            </div>
-                            {scheduleEnabled && (
-                                <div className="space-y-2">
-                                    <div className="flex items-center gap-2">
-                                        <label className="text-[0.7rem] font-medium" style={{ color: 'var(--muted)' }}>Profile:</label>
-                                        <select className="flex-1 rounded px-2 py-1 text-[0.72rem]" style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
-                                            value={scheduleProfileId} onChange={e => setScheduleProfileId(e.target.value)}>
-                                            <option value="">Select profile</option>
-                                            {profiles.map(p => <option key={p.id} value={p.id}>{p.name || p.id}</option>)}
-                                        </select>
-                                    </div>
-                                    {/* Preset buttons */}
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {CRON_PRESETS.map(p => (
-                                            <button key={p.cron}
-                                                className={`px-2 py-0.5 rounded text-[0.68rem] font-medium transition ${cronExpr === p.cron ? 'text-white' : ''}`}
-                                                style={{ background: cronExpr === p.cron ? 'var(--primary)' : 'var(--glass)', border: '1px solid var(--border2)', color: cronExpr === p.cron ? '#fff' : 'var(--fg)' }}
-                                                onClick={() => applyCronPreset(p.cron)}>{p.label}</button>
-                                        ))}
-                                    </div>
-                                    {/* Cron dropdowns */}
-                                    <div className="flex gap-2">
-                                        {[
-                                            { label: 'Minute', value: cronMinute, set: setCronMinute, options: MINUTE_OPTIONS },
-                                            { label: 'Hour', value: cronHour, set: setCronHour, options: HOUR_OPTIONS },
-                                            { label: 'Day', value: cronDay, set: setCronDay, options: DAY_OPTIONS },
-                                            { label: 'Month', value: cronMonth, set: setCronMonth, options: MONTH_OPTIONS },
-                                            { label: 'Weekday', value: cronWeekday, set: setCronWeekday, options: WEEKDAY_OPTIONS },
-                                        ].map(f => (
-                                            <div key={f.label} className="flex-1">
-                                                <label className="text-[0.62rem] font-medium block mb-0.5" style={{ color: 'var(--muted)' }}>{f.label}</label>
-                                                <select className="w-full rounded px-1 py-1 text-[0.7rem]" style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
-                                                    value={f.value} onChange={e => f.set(e.target.value)}>
-                                                    {f.options.map(o => <option key={o} value={o}>{o}</option>)}
-                                                </select>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    {/* Cron expression display */}
-                                    <div className="flex items-center gap-3">
-                                        <input className="rounded px-2 py-1 text-[0.72rem] font-mono w-[140px]"
+                        {settingsTab === 'settings' ? (
+                            <div className="flex-1 overflow-y-auto">
+                                {/* Name + Description */}
+                                <div className="p-3 space-y-3" style={{ borderBottom: '1px solid var(--border)' }}>
+                                    <div>
+                                        <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>Name</label>
+                                        <input className="w-full rounded px-2 py-1.5 text-[0.75rem]"
                                             style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
-                                            value={cronExpr} onChange={e => setCronExpr(e.target.value)} />
-                                        <span className="text-[0.7rem]" style={{ color: 'var(--muted)' }}>{describeCron(cronExpr)}</span>
+                                            value={editing.name} onChange={e => setEditing(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Login to site" />
+                                    </div>
+                                    <div>
+                                        <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>Description (optional)</label>
+                                        <input className="w-full rounded px-2 py-1.5 text-[0.75rem]"
+                                            style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
+                                            value={editing.description} onChange={e => setEditing(p => ({ ...p, description: e.target.value }))} placeholder="What does this script do?" />
                                     </div>
                                 </div>
-                            )}
-                        </div>
+                                {/* Browser Mode */}
+                                <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+                                    <div>
+                                        <span className="text-[0.78rem] font-semibold block" style={{ color: 'var(--fg)' }}>Browser mode</span>
+                                        <span className="text-[0.68rem]" style={{ color: 'var(--muted)' }}>{browserMode === 'headless' ? 'Background (no window)' : 'Visible (show window)'}</span>
+                                    </div>
+                                    <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border2)' }}>
+                                        <button className={`px-3 py-1 text-[0.72rem] font-medium transition ${browserMode === 'headless' ? 'text-white' : ''}`}
+                                            style={{ background: browserMode === 'headless' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'headless' ? '#fff' : 'var(--fg)' }}
+                                            onClick={() => setBrowserMode('headless')}>Headless</button>
+                                        <button className={`px-3 py-1 text-[0.72rem] font-medium transition ${browserMode === 'visible' ? 'text-white' : ''}`}
+                                            style={{ background: browserMode === 'visible' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'visible' ? '#fff' : 'var(--fg)' }}
+                                            onClick={() => setBrowserMode('visible')}>Visible</button>
+                                    </div>
+                                </div>
 
-                        {/* Browser Mode */}
-                        <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
-                            <div>
-                                <span className="text-[0.78rem] font-semibold block" style={{ color: 'var(--fg)' }}>Browser mode</span>
-                                <span className="text-[0.68rem]" style={{ color: 'var(--muted)' }}>{browserMode === 'headless' ? 'Background (no window)' : 'Visible (show window)'}</span>
-                            </div>
-                            <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border2)' }}>
-                                <button className={`px-3 py-1 text-[0.72rem] font-medium transition ${browserMode === 'headless' ? 'text-white' : ''}`}
-                                    style={{ background: browserMode === 'headless' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'headless' ? '#fff' : 'var(--fg)' }}
-                                    onClick={() => setBrowserMode('headless')}>Headless</button>
-                                <button className={`px-3 py-1 text-[0.72rem] font-medium transition ${browserMode === 'visible' ? 'text-white' : ''}`}
-                                    style={{ background: browserMode === 'visible' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'visible' ? '#fff' : 'var(--fg)' }}
-                                    onClick={() => setBrowserMode('visible')}>Visible</button>
-                            </div>
-                        </div>
+                                {/* ═══ Auto-Schedule (Cron) ═══ */}
+                                <div className="p-3 space-y-3" style={{ borderBottom: '1px solid var(--border)' }}>
+                                    {/* Header + toggle */}
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <Clock size={14} style={{ color: 'var(--primary)' }} />
+                                            <span className="text-[0.78rem] font-semibold" style={{ color: 'var(--fg)' }}>Auto-Schedule</span>
+                                        </div>
+                                        {/* Toggle switch */}
+                                        <label className="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" className="sr-only peer"
+                                                checked={cronEnabled}
+                                                onChange={e => setCronEnabled(e.target.checked)} />
+                                            <div className="w-9 h-5 rounded-full transition"
+                                                style={{
+                                                    background: cronEnabled ? 'var(--primary)' : 'var(--glass)',
+                                                    border: '1px solid var(--border2)',
+                                                }}>
+                                                <div className="w-4 h-4 bg-white rounded-full transition-transform"
+                                                    style={{
+                                                        transform: cronEnabled ? 'translateX(16px)' : 'translateX(2px)',
+                                                        marginTop: '1px',
+                                                    }} />
+                                            </div>
+                                        </label>
+                                    </div>
 
-                        {/* Monaco Editor */}
+                                    <p className="text-[0.66rem]" style={{ color: 'var(--muted)' }}>
+                                        When enabled, the script will automatically run according to the cron schedule on the specified profile.
+                                    </p>
+
+                                    {/* Khi bật → hiển thị các field bên dưới */}
+                                    {cronEnabled && (
+                                        <>
+                                            {/* Cron expression input */}
+                                            <div>
+                                                <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>
+                                                    Cron expression
+                                                </label>
+                                                <input type="text"
+                                                    id="cron-expression-input"
+                                                    className="w-full rounded px-2 py-1.5 text-[0.75rem] font-mono"
+                                                    style={{ background: 'var(--glass-input)', border: `1px solid ${cronError ? '#ef4444' : 'var(--border2)'}`, color: 'var(--fg)' }}
+                                                    value={cronSchedule}
+                                                    onChange={e => handleCronScheduleChange(e.target.value)}
+                                                    placeholder="e.g. 0 9 * * 1-5" />
+                                                <p className="text-[0.62rem] mt-1" style={{ color: 'var(--muted)' }}>
+                                                    Format: <code>minute hour day month weekday</code>
+                                                </p>
+                                            </div>
+
+                                            {/* Preset buttons — nhấn để điền nhanh */}
+                                            <div>
+                                                <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>
+                                                    Quick presets
+                                                </label>
+                                                <div className="flex flex-wrap gap-1">
+                                                    {[
+                                                        { label: 'Every minute', expr: '* * * * *' },
+                                                        { label: 'Every 5 mins', expr: '*/5 * * * *' },
+                                                        { label: 'Every hour', expr: '0 * * * *' },
+                                                        { label: 'Every day 9AM', expr: '0 9 * * *' },
+                                                        { label: 'Mon-Fri 9AM', expr: '0 9 * * 1-5' },
+                                                        { label: 'Every week (Sun)', expr: '0 0 * * 0' },
+                                                    ].map(p => (
+                                                        <button key={p.expr}
+                                                            type="button"
+                                                            className="px-2 py-0.5 text-[0.65rem] rounded transition"
+                                                            style={{
+                                                                background: cronSchedule === p.expr ? 'var(--primary)' : 'var(--glass)',
+                                                                color: cronSchedule === p.expr ? '#fff' : 'var(--fg)',
+                                                                border: '1px solid var(--border2)',
+                                                            }}
+                                                            onClick={() => handleCronScheduleChange(p.expr)}>
+                                                            {p.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Profile dropdown — script sẽ chạy trên profile này */}
+                                            <div>
+                                                <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>
+                                                    Run profile
+                                                </label>
+                                                <select className="w-full rounded px-2 py-1.5 text-[0.75rem]"
+                                                    style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
+                                                    value={cronProfileId}
+                                                    onChange={e => setCronProfileId(e.target.value)}>
+                                                    <option value="">-- Select profile --</option>
+                                                    {profiles.map(p => (
+                                                        <option key={p.id} value={p.id}>{p.name || p.id}</option>
+                                                    ))}
+                                                </select>
+                                                {!profiles.length && (
+                                                    <p className="text-[0.62rem] mt-1" style={{ color: '#ef4444' }}>
+                                                        Chưa có profile nào. Hãy tạo profile trước.
+                                                    </p>
+                                                )}
+                                            </div>
+
+                                            {/* Bug #5: hiển thị lỗi cron expression */}
+                                            {cronError && (
+                                                <div className="rounded px-2 py-1.5 text-[0.66rem]"
+                                                    style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', color: '#ef4444' }}>
+                                                    ⚠️ {cronError}
+                                                </div>
+                                            )}
+
+                                            {/* Bug #6: mô tả lịch + nút Test Run Now */}
+                                            {cronSchedule && cronProfileId && !cronError && (
+                                                <div className="rounded px-2 py-2 text-[0.66rem]"
+                                                    style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)', color: 'var(--fg)' }}>
+                                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                                        <div>
+                                                            <span style={{ color: 'rgba(34,197,94,0.9)', fontWeight: 600 }}>📅 Lịch: </span>
+                                                            {describeCron(cronSchedule)}
+                                                            <span className="font-mono ml-1" style={{ color: 'var(--muted)' }}>({cronSchedule})</span>
+                                                        </div>
+                                                        {/* Bug #6: nút Test Run Now — chạy ngay với profile đã chọn */}
+                                                        {editing?.id && (
+                                                            <button
+                                                                id="btn-schedule-run-now"
+                                                                type="button"
+                                                                disabled={runNowLoading}
+                                                                className="px-2 py-0.5 text-[0.65rem] rounded transition"
+                                                                style={{
+                                                                    background: runNowLoading ? 'var(--glass)' : 'rgba(59,130,246,0.15)',
+                                                                    border: '1px solid rgba(59,130,246,0.4)',
+                                                                    color: runNowLoading ? 'var(--muted)' : '#60a5fa',
+                                                                    cursor: runNowLoading ? 'not-allowed' : 'pointer',
+                                                                    whiteSpace: 'nowrap',
+                                                                }}
+                                                                onClick={async () => {
+                                                                    setRunNowLoading(true);
+                                                                    try {
+                                                                        const res = await window.electronAPI.scriptRunNow(editing.id);
+                                                                        if (res?.success) {
+                                                                            alert(`✅ Script "${editing.name}" chạy thành công!`);
+                                                                        } else if (res?.skipped) {
+                                                                            alert('⚠️ Script đang chạy rồi, không thể chạy song song.');
+                                                                        } else {
+                                                                            alert(`❌ Lỗi: ${res?.error || 'Unknown error'}`);
+                                                                        }
+                                                                    } catch (e) {
+                                                                        alert(`❌ Lỗi: ${e?.message || String(e)}`);
+                                                                    } finally {
+                                                                        setRunNowLoading(false);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                {runNowLoading ? '⏳ Đang chạy...' : '▶ Test Run Now'}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        ) : (
+                            <ApiReferencePanel onInsert={handleInsertSnippet} />
+                        )}
+                    </div>
+
+                    {/* Right: Code Editor */}
+                    <div className="flex-1 flex flex-col" style={{ minWidth: '300px', background: 'var(--card)' }}>
                         <div className="flex-1 relative" style={{ minHeight: 200 }}>
                             <Editor height="100%" language="javascript" theme="vs-dark"
                                 value={editing.code} onChange={v => setEditing(p => ({ ...p, code: v || '' }))}
                                 options={{ minimap: { enabled: false }, fontSize: 13, lineNumbers: 'on', scrollBeyondLastLine: false, automaticLayout: true, tabSize: 2, wordWrap: 'on', padding: { top: 8 } }} />
                         </div>
-
-                        {/* Run bar */}
-                        <div className="px-3 py-2 flex items-center gap-3" style={{ borderTop: '1px solid var(--border)', background: 'var(--card2)' }}>
-                            <select className="rounded px-2 py-1 text-[0.72rem]" style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
-                                value={runProfileId} onChange={e => setRunProfileId(e.target.value)}>
-                                <option value="">Select profile to run...</option>
-                                {profiles.map(p => <option key={p.id} value={p.id}>{p.name || p.id}</option>)}
-                            </select>
-                            <button className="btn btn-success text-[0.75rem] flex items-center gap-1" onClick={() => editing?.id ? openRunModal(editing) : alert('Save script first.')} disabled={running}>
-                                {running ? <><RefreshCw size={14} className="animate-spin" /> Running...</> : <><Play size={14} /> Run</>}
-                            </button>
-                        </div>
-
-                        {/* Run result */}
-                        {runResult && (
-                            <div className="max-h-[150px] font-mono text-[0.72rem] overflow-y-auto p-3" style={{ borderTop: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--fg)' }}>
-                                <div className={`mb-2 flex items-center gap-2 font-bold ${runResult.success ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                    {runResult.success ? '✅ Completed' : '❌ Error'} {runResult.error && `— ${runResult.error}`}
-                                </div>
-                                {runResult.logs?.map((l, i) => (
-                                    <div key={i} className="mb-0.5">
-                                        <span className="mr-2" style={{ color: 'var(--muted)' }}>[{new Date(l.time).toLocaleTimeString()}]</span>
-                                        <span>{l.message}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
                     </div>
-                ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: 'var(--muted)' }}>
-                        <FileCode size={48} strokeWidth={1} />
-                        <p className="text-[0.8rem]">Select a script or create a new one</p>
-                    </div>
-                )}
-            </div>
-
-            {/* ═══ Right API Reference ═══ */}
-            <ApiReferencePanel onInsert={editing ? handleInsertSnippet : null} />
+                </>
+            ) : (
+                <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: 'var(--muted)' }}>
+                    <FileCode size={48} strokeWidth={1} />
+                    <p className="text-[0.8rem]">Select a script or create a new one</p>
+                </div>
+            )}
 
             {/* Run Script Modal */}
             {runModalScript && (
@@ -908,26 +1030,26 @@ function BulkRunModal({ script, profiles = [], onClose }) {
                                 <span className="text-red-500 text-[1.5rem]">⚠️</span>
                             </div>
                             <div>
-                                <h3 className="text-[1.1rem] font-bold text-red-500">Cảnh Báo Đạo Đức / Security</h3>
+                                <h3 className="text-[1.1rem] font-bold text-red-500">Ethics Warning / Security</h3>
                                 <p className="text-[0.75rem] text-rose-300">High-Concurrency Execution Alert</p>
                             </div>
                         </div>
                         <div className="text-[0.8rem] mb-5 space-y-2 text-rose-100">
-                            <p>Bạn đang chuẩn bị chạy kịch bản tự động trên <strong>{selectedIds.length}</strong> tab trình duyệt cùng lúc.</p>
-                            <p className="font-semibold text-white">Rủi ro tiềm ẩn:</p>
+                            <p>You are about to run an automation script on <strong>{selectedIds.length}</strong> browser tabs simultaneously.</p>
+                            <p className="font-semibold text-white">Potential risks:</p>
                             <ul className="list-disc pl-5 opacity-90 space-y-1">
-                                <li><strong>Tốn tải băng thông (Bandwidth abuse)</strong> của máy chủ đích.</li>
-                                <li>Hành vi của bạn có thể vô tình cấu thành một cuộc tấn công <strong>Từ Chối Dịch Vụ (DDoS)</strong> nếu kịch bản liên tục tải lại hoặc request API nhanh.</li>
-                                <li>Mọi hành vi vi phạm đạo đức đều được ghi lại vào nhật ký Audit không thể xóa.</li>
+                                <li><strong>Bandwidth abuse</strong> of the target server.</li>
+                                <li>Your actions may inadvertently constitute a <strong>Denial-of-Service (DDoS) attack</strong> if the script repeatedly reloads or makes rapid API requests.</li>
+                                <li>Any unethical behavior is recorded in the non-deletable Audit log.</li>
                             </ul>
-                            <p className="mt-3 text-[0.75rem] opacity-75">Bạn có chắc chắn muốn phát động phiên chạy này không?</p>
+                            <p className="mt-3 text-[0.75rem] opacity-75">Are you sure you want to start this execution session?</p>
                         </div>
                         <div className="flex gap-3 justify-end mt-2">
                             <button className="px-4 py-2 rounded flex-1 text-[0.8rem] font-medium hover:bg-white/10 text-white transition border border-white/20" onClick={() => setShowWarning(false)}>
-                                Hủy bỏ (Cancel)
+                                Cancel
                             </button>
                             <button className="px-4 py-2 flex-1 rounded text-[0.8rem] font-bold text-white transition-all hover:brightness-125" style={{ background: '#ef4444', boxShadow: '0 0 15px rgba(239, 68, 68, 0.4)' }} onClick={executeRun}>
-                                Tôi chịu trách nhiệm (Run)
+                                I Accept Responsibility (Run)
                             </button>
                         </div>
                     </div>
@@ -940,7 +1062,6 @@ function BulkRunModal({ script, profiles = [], onClose }) {
 /* ═══════════════ Run Script Modal ═══════════════ */
 function RunScriptModal({ script, profiles = [], defaultProfileId = '', onClose, onComplete }) {
     const [selectedProfileId, setSelectedProfileId] = useState(defaultProfileId || '');
-    const [browserMode, setBrowserMode] = useState(script?.browserMode || 'visible');
     const [isRunning, setIsRunning] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [result, setResult] = useState(null);
@@ -957,7 +1078,7 @@ function RunScriptModal({ script, profiles = [], defaultProfileId = '', onClose,
         try {
             const res = await window.electronAPI.executeScript(selectedProfileId, script.id, {
                 timeoutMs: 120000,
-                headless: browserMode === 'headless',
+                headless: script?.browserMode === 'headless',
             });
             setResult(res);
             setLogs(res.logs || []);
@@ -1004,6 +1125,9 @@ function RunScriptModal({ script, profiles = [], defaultProfileId = '', onClose,
                         <div>
                             <h3 className="text-[0.9rem] font-bold" style={{ color: 'var(--fg)' }}>Run Script</h3>
                             <p className="text-[0.7rem]" style={{ color: 'var(--muted)' }}>{script?.name || 'Untitled Script'}</p>
+                            <p className="text-[0.65rem]" style={{ color: 'var(--primary)' }}>
+                                Mode: {script?.browserMode === 'headless' ? 'Headless (background)' : 'Visible (window)'}
+                            </p>
                         </div>
                     </div>
                     <button className="p-1.5 rounded-lg transition hover:brightness-125" style={{ background: 'var(--glass)', color: 'var(--muted)' }} onClick={onClose}>
@@ -1020,29 +1144,9 @@ function RunScriptModal({ script, profiles = [], defaultProfileId = '', onClose,
                         </div>
                     )}
 
-                    {/* Browser Mode */}
-                    <div>
-                        <label className="text-[0.72rem] font-semibold block mb-2" style={{ color: 'var(--fg)' }}>Browser Mode</label>
-                        <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border2)' }}>
-                            <button className="flex-1 px-3 py-2 text-[0.75rem] font-medium transition flex items-center justify-center gap-2"
-                                style={{ background: browserMode === 'visible' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'visible' ? '#fff' : 'var(--fg)' }}
-                                onClick={() => setBrowserMode('visible')}>
-                                <span style={{ fontSize: '1rem' }}>🖥️</span> Visible
-                            </button>
-                            <button className="flex-1 px-3 py-2 text-[0.75rem] font-medium transition flex items-center justify-center gap-2"
-                                style={{ background: browserMode === 'headless' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'headless' ? '#fff' : 'var(--fg)', borderLeft: '1px solid var(--border2)' }}
-                                onClick={() => setBrowserMode('headless')}>
-                                <span style={{ fontSize: '1rem' }}>👻</span> Headless
-                            </button>
-                        </div>
-                        <p className="text-[0.65rem] mt-1" style={{ color: 'var(--muted)' }}>
-                            {browserMode === 'headless' ? 'Browser runs in background — no window shown' : 'Browser window will be visible during execution'}
-                        </p>
-                    </div>
-
                     {/* Profile Selection */}
                     <div>
-                        <label className="text-[0.72rem] font-semibold block mb-2" style={{ color: 'var(--fg)' }}>Select Profile</label>
+                        <label className="text-[0.72rem] font-semibold block mb-2" style={{ color: 'var(--fg)' }}>Run with profile</label>
                         <select className="w-full rounded-lg px-3 py-2 text-[0.78rem]"
                             style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
                             value={selectedProfileId} onChange={e => setSelectedProfileId(e.target.value)}>
@@ -1131,8 +1235,7 @@ function ApiReferencePanel({ onInsert }) {
     const resultCount = filteredCats.reduce((s, c) => s + c.methods.length, 0);
 
     return (
-        <div className="w-[260px] flex flex-col" style={{ background: 'var(--card)', borderLeft: '1px solid var(--border)' }}>
-            <div className="px-3 py-2 text-[0.78rem] font-semibold" style={{ color: 'var(--fg)', borderBottom: '1px solid var(--border)' }}>API Reference</div>
+        <div className="flex-1 flex flex-col overflow-hidden" style={{ background: 'var(--card)' }}>
             <div className="px-3 py-1.5 relative" style={{ borderBottom: '1px solid var(--border)' }}>
                 <Search size={12} className="absolute left-5 top-[0.65rem]" style={{ color: 'var(--muted)' }} />
                 <input placeholder="Search methods..." value={search} onChange={e => setSearch(e.target.value)}
@@ -1206,6 +1309,11 @@ function TaskLogsTab({ profiles = [] }) {
 
     useEffect(() => { loadTasks(); }, [loadTasks]);
 
+    useEffect(() => {
+        const unsub = window.electronAPI.onTaskLogsUpdated?.(loadTasks);
+        return () => { unsub?.(); window.electronAPI.removeAllTaskLogsUpdated?.(); };
+    }, [loadTasks]);
+
     const handleSelect = async (task) => {
         setSelected(task);
         try { const res = await window.electronAPI.getTaskLog(task.id); if (res?.success) setDetailLogs(res.taskLog?.logs || []); else setDetailLogs([]); } catch { setDetailLogs([]); }
@@ -1227,7 +1335,26 @@ function TaskLogsTab({ profiles = [] }) {
     };
 
     const handleRunAgain = async () => {
-        if (!selected?.scriptId) return;
+        if (!selected) return;
+        // Task created from API: has scriptContent but no scriptId → run directly
+        if (!selected.scriptId) {
+            try {
+                await window.electronAPI.runTask(selected.id);
+                // Reload list and update currently selected task
+                const updatedList = await window.electronAPI.getTaskLogs();
+                if (Array.isArray(updatedList)) {
+                    setTasks(updatedList);
+                    const updated = updatedList.find(t => t.id === selected.id);
+                    if (updated) {
+                        setSelected(updated);
+                        const detail = await window.electronAPI.getTaskLog(updated.id);
+                        setDetailLogs(detail?.success ? (detail.taskLog?.logs || []) : []);
+                    }
+                }
+            } catch {}
+            return;
+        }
+        // Task from script library → open modal
         try {
             const res = await window.electronAPI.getScript(selected.scriptId);
             if (res?.success && res.script) {
@@ -1262,7 +1389,7 @@ function TaskLogsTab({ profiles = [] }) {
                             style={{ borderColor: selected?.id === t.id ? 'var(--primary)' : 'transparent', background: selected?.id === t.id ? 'var(--glass-strong)' : 'transparent', borderBottom: '1px solid var(--border)' }}
                             onClick={() => handleSelect(t)}>
                             <div className="flex justify-between items-center">
-                                <span className="text-[0.72rem] font-medium truncate flex-1 mr-1" style={{ color: 'var(--fg)' }}>{t.scriptName || 'Script'}</span>
+                                <span className="text-[0.72rem] font-medium truncate flex-1 mr-1" style={{ color: 'var(--fg)' }}>{t.name || t.scriptName || 'Script'}</span>
                                 <div className="flex items-center gap-1 shrink-0">
                                     <span className={`text-[0.65rem] font-medium ${t.status === 'completed' ? 'text-emerald-500' : t.status === 'error' ? 'text-rose-500' : 'text-amber-400'}`}>
                                         {t.status === 'completed' ? '✅' : t.status === 'error' ? '❌' : '⏳'}
@@ -1270,14 +1397,14 @@ function TaskLogsTab({ profiles = [] }) {
                                     <button
                                         className="opacity-50 hover:opacity-100 p-0.5 rounded hover:bg-red-500/10 transition-all"
                                         style={{ color: 'var(--danger)' }}
-                                        onClick={(e) => handleDelete(e, t.id, t.scriptName)}
+                                        onClick={(e) => handleDelete(e, t.id, t.name || t.scriptName)}
                                         title="Delete this log"
                                     ><X size={11} /></button>
                                 </div>
                             </div>
                             <div className="flex justify-between text-[0.62rem] mt-0.5" style={{ color: 'var(--muted)' }}>
                                 <span>Profile: {(t.profileId || '').slice(0, 8)}</span>
-                                <span>{new Date(t.finishedAt || t.startedAt).toLocaleTimeString()}</span>
+                                <span>{new Date(t.completedAt || t.createdAt || t.finishedAt || t.startedAt).toLocaleTimeString()}</span>
                             </div>
                         </div>
                     ))}
@@ -1288,13 +1415,16 @@ function TaskLogsTab({ profiles = [] }) {
                 {selected ? (
                     <>
                         <div className="px-3 py-2 flex items-center gap-2" style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
-                            <span className="text-[0.75rem] font-semibold" style={{ color: 'var(--fg)' }}>{selected.scriptName}</span>
+                            <span className="text-[0.75rem] font-semibold" style={{ color: 'var(--fg)' }}>{selected.name || selected.scriptName}</span>
                             <span className={`text-[0.65rem] ${selected.status === 'completed' ? 'text-emerald-500' : 'text-rose-500'}`}>{selected.status}</span>
-                            <span className="text-[0.65rem]" style={{ color: 'var(--muted)' }}>{new Date(selected.startedAt).toLocaleString()}</span>
+                            <span className="text-[0.65rem]" style={{ color: 'var(--muted)' }}>
+                              {new Date(selected.createdAt || selected.startedAt).toLocaleString()}
+                              {(selected.completedAt || selected.finishedAt) ? ` → ${new Date(selected.completedAt || selected.finishedAt).toLocaleString()}` : ''}
+                            </span>
                             <button className="ml-auto px-3 py-1 rounded-lg text-[0.72rem] font-semibold text-white flex items-center gap-1.5 hover:brightness-110 transition"
                                 style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}
                                 onClick={handleRunAgain}>
-                                <Play size={12} /> Run Again
+                                <Play size={12} /> {selected.status === 'queued' ? 'Run' : 'Run Again'}
                             </button>
                         </div>
                         {selected.error && <div className="px-3 py-1.5 text-[0.72rem] text-rose-400" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(220,38,38,0.05)' }}>Error: {selected.error}</div>}

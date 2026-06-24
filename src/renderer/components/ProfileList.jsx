@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Search, X } from 'lucide-react';
 import './ProfileList.css';
+import ElementPicker from './ElementPicker';
 
 function ProxyPickerPopup({ profile, isRunning = false, onClose, onSaved }) {
   const [proxies, setProxies] = useState([]);
@@ -165,7 +166,7 @@ function ProxyPickerPopup({ profile, isRunning = false, onClose, onSaved }) {
 
 // Common SVG Icons
 const ChromiumIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="10" />
     <circle cx="12" cy="12" r="4" />
     <line x1="21.17" y1="8" x2="12" y2="8" />
@@ -175,19 +176,19 @@ const ChromiumIcon = () => (
 );
 
 const AppleIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none">
     <path d="M12 2.04C10.5 2.04 9 3.54 9 5c1.5 0 3-1.5 3-2.96zm1.2 19.33c-.71.55-1.55.84-3.2.84-1.65 0-2.49-.29-3.2-.84-2.1-1.65-4.8-6.15-4.8-10.35 0-3.3 2.1-5.1 4.5-5.1 1.2 0 2.4.6 3.3 1.2.9-.6 2.1-1.2 3.3-1.2 2.4 0 4.5 1.8 4.5 5.1 0 4.2-2.7 8.7-4.8 10.35z"/>
   </svg>
 );
 
 const FoxIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ea580c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ea580c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M22 6s-2-2-5-2-4 2-4 2-2-2-4-2-5 2-5 2l1.6 4.8c0 0-1.6 3.2-1.6 6.4 0 3.2 2.4 4.8 4 4.8s4-2 6-2 4.4 2 6 2 4-1.6 4-4.8c0-3.2-1.6-6.4-1.6-6.4L22 6z"/>
   </svg>
 );
 
 const MonitorIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
     <line x1="8" y1="21" x2="16" y2="21" />
     <line x1="12" y1="17" x2="12" y2="21" />
@@ -278,9 +279,10 @@ export default function ProfileList({
     if (engineFilter !== 'all') {
       list = list.filter(p => {
         const eng = (p.settings?.engine || 'playwright').toLowerCase();
-        if (engineFilter === 'chromium') return eng === 'playwright' || eng === 'cdp';
+        if (engineFilter === 'chromium') return eng === 'playwright';
         if (engineFilter === 'firefox') return eng === 'playwright-firefox' || eng === 'firefox';
         if (engineFilter === 'camoufox') return eng === 'camoufox';
+        if (engineFilter === 'cloakbrowser') return eng === 'cloakbrowser';
         return true;
       });
     }
@@ -321,19 +323,23 @@ export default function ProfileList({
   // Proxy picker popup
   const [proxyPickerProfile, setProxyPickerProfile] = useState(null);
 
+  // Fingerprint Inspector modal
+  const [inspectingProfile, setInspectingProfile] = useState(null);
+
   // Bulk create modal
   const [showBulkCreate, setShowBulkCreate] = useState(false);
   const [bulkCount, setBulkCount] = useState(5);
   const [bulkPrefix, setBulkPrefix] = useState('Profile');
+  const [bulkEngine, setBulkEngine] = useState('playwright');
   const [bulkCreating, setBulkCreating] = useState(false);
 
   const shortId = (id) => (id || '').substring(0, 6);
 
   const getOsInfo = (p) => {
     const os = p?.fingerprint?.os || 'Windows';
-    if (os === 'Windows') return { label: 'WIN32', icon: <WindowsIcon /> };
-    if (os === 'macOS') return { label: 'MACINTEL', icon: <AppleIcon /> };
-    return { label: 'LINUX', icon: null };
+    if (os === 'Windows') return { label: 'Win', icon: <WindowsIcon /> };
+    if (os === 'macOS') return { label: 'macOS', icon: <AppleIcon /> };
+    return { label: 'Linux', icon: null };
   };
 
   return (
@@ -347,7 +353,7 @@ export default function ProfileList({
               + Create Multiple
             </button>
           )}
-          <button className="pl-new-btn" onClick={onCreateProfile} style={{ background: 'var(--success)', borderRadius: '8px' }}>
+          <button className="pl-new-btn" onClick={onCreateProfile} style={{ background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)', borderRadius: '8px' }}>
             + New Profile
           </button>
         </div>
@@ -388,6 +394,7 @@ export default function ProfileList({
             <option value="chromium">Chromium</option>
             <option value="firefox">Firefox</option>
             <option value="camoufox">Camoufox</option>
+            <option value="cloakbrowser">CloakBrowser</option>
           </select>
           <select className="pl-filter-select" value={sortBy} onChange={e => setSortBy(e.target.value)}>
             <option value="created-desc">Newest first</option>
@@ -406,7 +413,7 @@ export default function ProfileList({
       )}
 
       {/* Cards */}
-      <div className="pl-cards" style={{ overflowY: 'auto', flex: 1 }}>
+      <div className="pl-cards">
         {(!profiles || profiles.length === 0) ? (
           <div className="pl-empty-state">
             <div className="pl-empty-icon">
@@ -414,7 +421,7 @@ export default function ProfileList({
             </div>
             <h3>No profiles yet</h3>
             <p>Create your first browser profile to get started with antidetect browsing.</p>
-            <button className="pl-new-btn" onClick={onCreateProfile} style={{ background: 'var(--success)', borderRadius: '8px' }}>
+            <button className="pl-new-btn" onClick={onCreateProfile} style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', borderRadius: '8px' }}>
               + New Profile
             </button>
           </div>
@@ -436,7 +443,8 @@ export default function ProfileList({
             const engine = profile?.settings?.engine || 'playwright';
             const isFirefox = engine === 'playwright-firefox' || engine === 'firefox';
             const isCamoufox = engine === 'camoufox';
-            const engineLabel = isCamoufox ? 'Camoufox' : isFirefox ? 'Firefox' : 'Chromium';
+            const isCloakBrowser = engine === 'cloakbrowser';
+            const engineLabel = isCamoufox ? 'Camoufox' : isCloakBrowser ? 'CloakBrowser' : isFirefox ? 'Firefox' : 'Chromium';
             
             const hasProxy = profile?.settings?.proxy?.type && profile.settings.proxy.type !== 'none' && profile.settings.proxy.server;
             const proxyType = hasProxy ? profile.settings.proxy.type.toUpperCase() : '';
@@ -454,36 +462,69 @@ export default function ProfileList({
                   onChange={() => onToggleSelect(profile.id)}
                   onClick={(e) => e.stopPropagation()}
                 />
-                {/* Dot */}
+                {/* Status dot */}
                 <div className={`pl-dot ${isRunning || isStarting ? 'pl-dot-active' : ''} ${hasError ? 'pl-dot-error' : ''} ${isStarting ? 'pl-dot-starting' : ''}`} />
 
-                {/* Info: 3 rows */}
-                <div className="pl-info">
-                  {/* Row 1: shortId + engine badge + name */}
-                  <div className="pl-name-row">
-                    <span className="pl-id">{shortId(profile.id)}</span>
-                    <span style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '5px',
-                      padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 600,
-                      background: isCamoufox ? 'rgba(168,85,247,0.15)' : isFirefox ? 'rgba(234,88,12,0.15)' : 'rgba(16,185,129,0.15)',
-                      color: isCamoufox ? '#c084fc' : isFirefox ? '#fb923c' : '#34d399',
-                      border: `1px solid ${isCamoufox ? 'rgba(168,85,247,0.3)' : isFirefox ? 'rgba(234,88,12,0.3)' : 'rgba(16,185,129,0.3)'}`,
-                    }}>
-                      <span style={{
-                        width: '6px', height: '6px', borderRadius: '50%',
-                        background: isCamoufox ? '#c084fc' : isFirefox ? '#fb923c' : '#10b981',
-                      }} />
-                      {engineLabel}
-                    </span>
-                    <span className="pl-name">{profile.name || 'Profile'}</span>
-                    {isRunning && <span className="pl-status-label pl-status-running">Running</span>}
-                    {isStarting && <span className="pl-status-label pl-status-starting">Starting...</span>}
-                    {isStopping && <span className="pl-status-label pl-status-starting">Stopping...</span>}
-                    {hasError && <span className="pl-status-label pl-status-error">Error</span>}
-                  </div>
+                {/* "P" Avatar */}
+                <div style={{
+                  width: '30px', height: '30px', borderRadius: '7px', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: isCamoufox ? 'rgba(168,85,247,0.85)' : isCloakBrowser ? 'rgba(6,182,212,0.85)' : isFirefox ? 'rgba(234,88,12,0.85)' : 'rgba(37,99,235,0.85)',
+                  color: '#fff', fontWeight: 700, fontSize: '0.82rem', letterSpacing: '-0.5px',
+                  boxShadow: `0 2px 6px ${isCamoufox ? 'rgba(168,85,247,0.3)' : isCloakBrowser ? 'rgba(6,182,212,0.3)' : isFirefox ? 'rgba(234,88,12,0.3)' : 'rgba(37,99,235,0.3)'}`,
+                }}>
+                  P
+                </div>
 
-                  {/* Row 2: OS + browser + resolution tags */}
-                  <div className="pl-tags" style={{ marginBottom: '4px' }}>
+                {/* Info */}
+                <div className="pl-info">
+                  {/* Row 1: name + short ID (copy) + engine badge (CR/FF) */}
+                  <div className="pl-name-row">
+                    <span className="pl-name">{profile.name || 'Profile'}</span>
+
+                    {/* Short ID — click to copy */}
+                    <span
+                      title="Click to copy profile ID"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText(profile.id || '').then(() => {
+                          const el = e.currentTarget;
+                          const prev = el.textContent;
+                          el.textContent = 'Copied!';
+                          setTimeout(() => { el.textContent = prev; }, 1200);
+                        }).catch(() => {});
+                      }}
+                      style={{
+                        fontSize: '0.6rem', color: 'var(--muted)', fontFamily: 'monospace',
+                        background: 'var(--glass)', border: '1px solid var(--border2)',
+                        borderRadius: '3px', padding: '1px 4px', cursor: 'pointer',
+                        userSelect: 'none', letterSpacing: '0.03em', flexShrink: 0,
+                        transition: 'color 0.15s, background 0.15s',
+                        display: 'flex', alignItems: 'center', gap: '3px'
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.color = 'var(--fg)'; e.currentTarget.style.background = 'var(--card2)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.color = 'var(--muted)'; e.currentTarget.style.background = 'var(--glass)'; }}
+                    >
+                      <span>{shortId(profile.id)}</span>
+                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                      </svg>
+                    </span>
+
+                    {/* Engine badge: CR / FF */}
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center',
+                      padding: '1px 5px', borderRadius: '3px', fontSize: '0.6rem', fontWeight: 700,
+                      background: isCamoufox ? 'rgba(168,85,247,0.15)' : isCloakBrowser ? 'rgba(6,182,212,0.15)' : isFirefox ? 'rgba(234,88,12,0.15)' : 'rgba(37,99,235,0.15)',
+                      color: isCamoufox ? '#c084fc' : isCloakBrowser ? '#22d3ee' : isFirefox ? '#fb923c' : '#60a5fa',
+                      border: `1px solid ${isCamoufox ? 'rgba(168,85,247,0.35)' : isCloakBrowser ? 'rgba(6,182,212,0.35)' : isFirefox ? 'rgba(234,88,12,0.35)' : 'rgba(37,99,235,0.35)'}`,
+                      letterSpacing: '0.04em',
+                    }}>
+                      {isCamoufox ? 'CF' : isCloakBrowser ? 'CB' : isFirefox ? 'FF' : 'CR'}
+                    </span>
+
+                    {/* OS / browser / resolution — same line as name */}
                     <span className="pl-tag">
                       {osInfo.icon && <span className="pl-tag-icon">{osInfo.icon}</span>}
                       {osInfo.label}
@@ -496,11 +537,16 @@ export default function ProfileList({
                       <span className="pl-tag-icon"><MonitorIcon /></span>
                       {res}
                     </span>
+                    {isRunning && <span className="pl-status-label pl-status-running">Running</span>}
+                    {isStarting && <span className="pl-status-label pl-status-starting">Starting...</span>}
+                    {isStopping && <span className="pl-status-label pl-status-starting">Stopping...</span>}
+                    {hasError && <span className="pl-status-label pl-status-error">Error</span>}
                   </div>
 
-                  {/* Row 2b: Proxy (only if set) */}
+
+                  {/* Proxy (only if set) */}
                   {hasProxy && (
-                    <div style={{ marginBottom: '4px' }}>
+                    <div style={{ marginBottom: '2px' }}>
                       <span className="pl-tag" style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--fg)', border: '1px solid rgba(99,102,241,0.25)', maxWidth: '100%' }}>
                         <span className="pl-tag-icon"><LinkIcon /></span>
                         <span style={{ color: '#818cf8', fontWeight: 700, flexShrink: 0 }}>{proxyType}</span>
@@ -509,8 +555,8 @@ export default function ProfileList({
                     </div>
                   )}
 
-                  {/* Row 3: Fingerprint section toggle badges */}
-                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                  {/* Row 2: Fingerprint section badges */}
+                  <div style={{ display: 'flex', gap: '2px', flexWrap: 'wrap' }}>
                     {BADGE_MAP.map(({ key, label, section, title }) => {
                       const isEnabled = !!profile?.settings?.[section]?.enabled;
                       const isWarn = key === 'DSP' && isEnabled;
@@ -543,28 +589,68 @@ export default function ProfileList({
                       {!!headlessPrefs[profile.id] && onViewLiveScreen && (
                         <button
                           className="pl-btn"
-                          style={{
-                            background: 'rgba(139, 92, 246, 0.2)',
-                            color: '#a78bfa',
-                            border: '1px solid rgba(139, 92, 246, 0.4)',
-                          }}
+                          style={{ background: 'rgba(139, 92, 246, 0.2)', color: '#a78bfa', border: '1px solid rgba(139, 92, 246, 0.4)' }}
                           onClick={() => onViewLiveScreen(profile)}
                           title="View live headless screen"
                         >
                           👁 View
                         </button>
                       )}
+                      {/* Inspect Fingerprint button — chỉ hiện khi profile đang chạy */}
+                      <button
+                        id={`btn-inspect-fp-${profile.id}`}
+                        className="pl-btn"
+                        title="Inspect live browser fingerprint"
+                        style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.35)', padding: '3px 7px', fontSize: '0.68rem' }}
+                        onClick={() => setInspectingProfile(profile)}
+                      >
+                        🔍 Inspect
+                      </button>
                     </>
                   ) : (
                     <>
-                      <button className="pl-btn pl-btn-launch" onClick={() => onToggleProfile(profile.id)}>Launch</button>
-                      <button className="pl-btn pl-btn-headless" onClick={() => onLaunchHeadless(profile.id)}>Headless</button>
+                      <button className="pl-btn pl-btn-launch" onClick={() => onToggleProfile(profile.id)} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        Launch
+                      </button>
+                      <button className="pl-btn pl-btn-headless" onClick={() => onLaunchHeadless(profile.id)} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                        Headless
+                      </button>
                     </>
                   )}
-                  <button className="pl-btn pl-btn-proxy" onClick={() => setProxyPickerProfile({ profile, isRunning })} disabled={isTransitioning}>Proxy</button>
-                  <button className="pl-btn pl-btn-clone" onClick={() => onCloneProfile(profile.id)} disabled={isTransitioning}>Clone</button>
-                  <button className="pl-btn pl-btn-edit" onClick={() => onEditProfile(profile)} disabled={isTransitioning}>Edit</button>
-                  <button className="pl-btn pl-btn-delete" onClick={() => onDeleteProfile(profile.id)} disabled={isRunning || isTransitioning}>Delete</button>
+                  <button
+                    title="Proxy"
+                    onClick={() => setProxyPickerProfile({ profile, isRunning })}
+                    disabled={isTransitioning}
+                    style={{ width: '26px', height: '26px', border: '1px solid #d1d5db', borderRadius: '5px', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6366f1', opacity: isTransitioning ? 0.4 : 1 }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                  </button>
+                  <button
+                    title="Clone"
+                    onClick={() => onCloneProfile(profile.id)}
+                    disabled={isTransitioning}
+                    style={{ width: '26px', height: '26px', border: '1px solid #d1d5db', borderRadius: '5px', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6', opacity: isTransitioning ? 0.4 : 1 }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  </button>
+                  <button
+                    title="Edit"
+                    onClick={() => onEditProfile(profile)}
+                    disabled={isTransitioning}
+                    style={{ width: '26px', height: '26px', border: '1px solid #d1d5db', borderRadius: '5px', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f59e0b', opacity: isTransitioning ? 0.4 : 1 }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
+                  <button
+                    title="Delete"
+                    onClick={() => onDeleteProfile(profile.id)}
+                    disabled={isRunning || isTransitioning}
+                    style={{ width: '26px', height: '26px', border: '1px solid #fca5a5', borderRadius: '5px', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', opacity: (isRunning || isTransitioning) ? 0.4 : 1 }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                  </button>
                 </div>
               </div>
             );
@@ -657,6 +743,15 @@ export default function ProfileList({
                 />
               </div>
               <div className="pl-modal-field">
+                <label>Browser Engine</label>
+                <select style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', background: 'var(--glass)', border: '1px solid var(--border)', color: 'var(--fg)', fontSize: '0.85rem' }} value={bulkEngine} onChange={e => setBulkEngine(e.target.value)}>
+                  <option value="playwright">Chromium (Playwright)</option>
+                  <option value="playwright-firefox">Firefox (Playwright)</option>
+                  <option value="camoufox">Camoufox (Anti-detect)</option>
+                  <option value="cloakbrowser">CloakBrowser (Anti-detect)</option>
+                </select>
+              </div>
+              <div className="pl-modal-field">
                 <label>Number of Profiles</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   <input
@@ -677,9 +772,6 @@ export default function ProfileList({
                   />
                 </div>
               </div>
-              <div className="pl-modal-preview">
-                Preview: <strong>{bulkPrefix || 'Profile'} 1</strong> ... <strong>{bulkPrefix || 'Profile'} {bulkCount}</strong>
-              </div>
             </div>
             <div className="pl-modal-footer">
               <button className="pl-btn pl-btn-edit" onClick={() => setShowBulkCreate(false)} disabled={bulkCreating}>Cancel</button>
@@ -689,10 +781,11 @@ export default function ProfileList({
                 onClick={async () => {
                   setBulkCreating(true);
                   try {
-                    await onCreateBulk(bulkCount, bulkPrefix.trim() || 'Profile');
+                    await onCreateBulk(bulkCount, bulkPrefix.trim() || 'Profile', bulkEngine);
                     setShowBulkCreate(false);
                     setBulkCount(5);
                     setBulkPrefix('Profile');
+                    setBulkEngine('playwright');
                   } catch { }
                   setBulkCreating(false);
                 }}
@@ -702,6 +795,15 @@ export default function ProfileList({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Element Picker — mở khi nhấn nút 🔍 Inspect trên profile đang chạy */}
+      {inspectingProfile && (
+        <ElementPicker
+          profileId={inspectingProfile.id}
+          profileName={inspectingProfile.name}
+          onClose={() => setInspectingProfile(null)}
+        />
       )}
     </div>
   );
