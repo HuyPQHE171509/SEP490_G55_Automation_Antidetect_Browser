@@ -18,7 +18,7 @@ import AuthModal from './components/AuthModal';
 import './App.css';
 import { useI18n } from './i18n/index';
 import { db } from './services/firebase';
-import { collection, getDocs, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, deleteDoc, writeBatch, getCountFromServer } from 'firebase/firestore';
  
 function App() {
   const { t, lang, setLang } = useI18n();
@@ -126,9 +126,11 @@ function App() {
     return cleanup;
   }, []);
 
+  const licenseKey = `hl-license-activated_${localStorage.getItem('firebase_email') || ''}`;
   const [showLicenseModal, setShowLicenseModal] = useState(() => {
     // Skip modal if user already activated OR chose free plan this session
-    return !localStorage.getItem('hl-license-activated') &&
+    const email = localStorage.getItem('firebase_email') || '';
+    return !localStorage.getItem(`hl-license-activated_${email}`) &&
            !sessionStorage.getItem('license-skipped');
   });
   const handleCloseLicense = () => {
@@ -414,6 +416,17 @@ function App() {
     } catch (e) { console.warn('Failed to refresh running status', e); }
   };
 
+  // ── Helper: lấy số profile thực tế từ Firestore (tránh bypass bằng state cũ) ──
+  const getCloudProfileCount = async () => {
+    if (!currentUser?.uid) return (profiles || []).length;
+    try {
+      const snap = await getCountFromServer(collection(db, `users/${currentUser.uid}/profiles`));
+      return snap.data().count;
+    } catch {
+      return (profiles || []).length;
+    }
+  };
+
   const handleCreateProfile = () => {
     const base = 'Profile'; const existing = new Set((profiles || []).map(p => (p.name || '').trim()));
     let name = `${base} ${(profiles || []).length + 1}`; for (let i = 1; i <= (profiles || []).length + 100; i++) { const c = `${base} ${i}`; if (!existing.has(c)) { name = c; break; } }
@@ -506,12 +519,13 @@ function App() {
     try {
       // Check license limit cho free users
       const isNewProfile = !profile.id;
-      const isPaidUser = !!localStorage.getItem('hl-license-activated');
+      const email = localStorage.getItem('firebase_email') || '';
+      const isPaidUser = !!localStorage.getItem(`hl-license-activated_${email}`);
       
       if (isNewProfile && !isPaidUser) {
-        const currentProfileCount = (profiles || []).length;
-        if (currentProfileCount >= 5) {
-          alert('Free plan is limited to a maximum of 5 profiles.\n\nPlease upgrade your license to create more profiles.');
+        const cloudCount = await getCloudProfileCount();
+        if (cloudCount >= 5) {
+          alert(`Tài khoản Free chỉ được tạo tối đa 5 profile.\nBạn đang có ${cloudCount} profile trên cloud.\n\nVui lòng nâng cấp lên Pro để tạo thêm.`);
           return;
         }
       }
@@ -537,10 +551,12 @@ function App() {
   // Bulk operations
   const handleCreateBulk = async (count, namePrefix, engine = 'playwright') => {
     try {
-      const isPaidUser = !!localStorage.getItem('hl-license-activated');
-      const currentProfileCount = (profiles || []).length;
-      if (!isPaidUser && currentProfileCount + count > 5) {
-        alert('Free plan is limited to a maximum of 5 profiles.\n\nPlease upgrade your license to create more profiles.');
+      const email = localStorage.getItem('firebase_email') || '';
+      const isPaidUser = !!localStorage.getItem(`hl-license-activated_${email}`);
+      const cloudCount = await getCloudProfileCount();
+      if (!isPaidUser && cloudCount + count > 5) {
+        const canCreate = Math.max(0, 5 - cloudCount);
+        alert(`Tài khoản Free chỉ được tạo tối đa 5 profile.\nBạn đang có ${cloudCount} profile trên cloud, chỉ còn có thể tạo thêm ${canCreate} profile.\n\nVui lòng nâng cấp lên Pro để tạo thêm.`);
         return;
       }
 
@@ -615,10 +631,12 @@ function App() {
   const handleCloneBulk = async (ids) => {
     if (!ids?.length) return;
     try {
-      const isPaidUser = !!localStorage.getItem('hl-license-activated');
-      const currentProfileCount = (profiles || []).length;
-      if (!isPaidUser && currentProfileCount + ids.length > 5) {
-        alert('Free plan is limited to a maximum of 5 profiles.\n\nPlease upgrade your license to create more profiles.');
+      const email = localStorage.getItem('firebase_email') || '';
+      const isPaidUser = !!localStorage.getItem(`hl-license-activated_${email}`);
+      const cloudCount = await getCloudProfileCount();
+      if (!isPaidUser && cloudCount + ids.length > 5) {
+        const canClone = Math.max(0, 5 - cloudCount);
+        alert(`Tài khoản Free chỉ được tạo tối đa 5 profile.\nBạn đang có ${cloudCount} profile trên cloud, chỉ còn có thể clone thêm ${canClone} profile.\n\nVui lòng nâng cấp lên Pro để tạo thêm.`);
         return;
       }
 
@@ -849,10 +867,27 @@ function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const confirmed = window.confirm(
+      'Bạn có chắc muốn đăng xuất không?\n\nLịch sử profile sẽ được lưu lại cho tài khoản của bạn trên cloud.'
+    );
+    if (!confirmed) return;
+
+    // Clear local profile cache so next user starts fresh
+    try {
+      if (window.electronAPI?.syncLocalProfiles) {
+        await window.electronAPI.syncLocalProfiles([]);
+      }
+    } catch (e) {
+      console.warn('Could not clear local profile cache:', e);
+    }
+
+    // Clear session & auth data
     localStorage.removeItem('firebase_id_token');
     localStorage.removeItem('firebase_uid');
     localStorage.removeItem('firebase_email');
+    sessionStorage.removeItem('license-skipped');
+    setProfiles([]);
     setCurrentUser(null);
   };
 
@@ -919,6 +954,7 @@ function App() {
           onCreateProfile={handleCreateProfile}
           apiStatus={apiStatus}
           onLogout={handleLogout}
+          currentUser={currentUser}
         />
       )}
 

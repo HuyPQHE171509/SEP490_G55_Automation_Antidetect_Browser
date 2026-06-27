@@ -5,8 +5,9 @@ import { verifyFirebaseToken } from './lib/firebaseAdmin.js';
 const LICENSE_SECRET = 'HL-MCK-SEP490-G55-2024';
 
 /** Must match deriveLicenseKey in the Electron app's machineId.js */
-function deriveLicenseKey(machineCode) {
-  const raw = machineCode.replace(/\s/g, '') + LICENSE_SECRET;
+function deriveLicenseKey(machineCode, email) {
+  const normalizedEmail = (email || '').trim().toLowerCase();
+  const raw = machineCode.replace(/\s/g, '') + normalizedEmail + LICENSE_SECRET;
   const hash = createHash('sha256').update(raw).digest('hex').toUpperCase();
   return `HL-${hash.slice(0, 4)}-${hash.slice(4, 8)}-${hash.slice(8, 12)}`;
 }
@@ -62,15 +63,15 @@ export default async function handler(req, res) {
     // Already activated on THIS machine → idempotent
     if (order.activatedMachine) {
       if (order.activatedMachine === normalizedMachine) {
-        return res.status(200).json({ licenseKey: deriveLicenseKey(normalizedMachine) });
+        return res.status(200).json({ licenseKey: deriveLicenseKey(normalizedMachine, email) });
       }
       return res.status(409).json({
         error: 'License already activated on another machine. One license = one machine.',
       });
     }
 
-    // First activation — bind machine and derive key
-    const licenseKey = deriveLicenseKey(normalizedMachine);
+    // First activation — bind machine + email and derive key
+    const licenseKey = deriveLicenseKey(normalizedMachine, email);
     await updateOrder(orderCode, {
       activatedMachine: normalizedMachine,
       licenseKey,

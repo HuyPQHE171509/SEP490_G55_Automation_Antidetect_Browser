@@ -9,6 +9,7 @@ export default function DashboardSidebar({
     onCreateProfile,
     apiStatus = {},
     onLogout,
+    currentUser,
 }) {
     const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -43,12 +44,27 @@ export default function DashboardSidebar({
     const renderNav = (closeMobile) => (
         <>
             {/* Brand */}
-            <div className="sidebar-brand pb-6 pt-2 px-2 border-b-0 mb-2 mt-2">
+            <div className="sidebar-brand pb-4 pt-2 px-2 border-b-0 mb-2 mt-2">
                 <div className="flex flex-col gap-1">
                     <h2 className="text-[1.2rem] font-bold text-[var(--fg)] tracking-tight leading-none">HL-MCK Browser</h2>
                     <span className="text-[0.75rem] text-[var(--muted)] font-medium">Antidetect Manager</span>
                 </div>
             </div>
+
+            {/* Welcome User Card */}
+            {currentUser?.email && (
+                <div className="mx-2 mb-4 p-2.5 bg-[var(--border)]/10 rounded-xl border border-[var(--border)]/40 flex items-center gap-3 shadow-sm">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#00bcd4]/20 to-[#00bcd4]/5 border border-[#00bcd4]/30 text-[#00bcd4] flex items-center justify-center text-[15px] font-bold shrink-0 uppercase shadow-sm">
+                        {currentUser.email.charAt(0)}
+                    </div>
+                    <div className="flex flex-col flex-1 min-w-0">
+                        <span className="text-[10px] text-[var(--muted)] font-bold uppercase tracking-wider mb-0.5">Welcome back</span>
+                        <span className="text-[13px] font-semibold text-[var(--fg)] truncate block" title={currentUser.email.split('@')[0]}>
+                            {currentUser.email.split('@')[0]}
+                        </span>
+                    </div>
+                </div>
+            )}
 
             {/* Navigation */}
             <nav className="flex flex-col gap-1 px-1">

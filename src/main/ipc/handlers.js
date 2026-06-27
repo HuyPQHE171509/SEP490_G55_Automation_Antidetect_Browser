@@ -285,7 +285,7 @@ function registerIpcHandlers(extra = {}) {
 
   // Quản lý Mã máy (Machine Code) & Giấy phép (License)
   handle('get-machine-code', () => getMachineCode());
-  handle('validate-license', (_e, key) => validateLicenseKey(key));
+  handle('validate-license', (_e, key, email) => validateLicenseKey(key, email));
   handle('deactivate-license', () => deactivateLicense());
 
   // Quản lý Môi trường chạy Trình duyệt (Browser Runtime Manager)

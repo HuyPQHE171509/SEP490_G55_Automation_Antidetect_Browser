@@ -53,8 +53,9 @@ function getMachineCode() {
 // Format: HL-XXXX-XXXX-XXXX (12 hex chars from SHA256)
 const LICENSE_SECRET = 'HL-MCK-SEP490-G55-2024';
 
-function deriveLicenseKey(machineCode) {
-  const raw = machineCode.replace(/\s/g, '') + LICENSE_SECRET;
+function deriveLicenseKey(machineCode, email) {
+  const normalizedEmail = (email || '').trim().toLowerCase();
+  const raw = machineCode.replace(/\s/g, '') + normalizedEmail + LICENSE_SECRET;
   const hash = crypto.createHash('sha256').update(raw).digest('hex').toUpperCase();
   return `HL-${hash.slice(0, 4)}-${hash.slice(4, 8)}-${hash.slice(8, 12)}`;
 }
@@ -76,10 +77,10 @@ async function fetchLicenseMeta(machineCode) {
   }
 }
 
-async function validateLicenseKey(inputKey) {
+async function validateLicenseKey(inputKey, email) {
   try {
     const machineCode = getMachineCode();
-    const expected = deriveLicenseKey(machineCode);
+    const expected = deriveLicenseKey(machineCode, email);
     const isValid = inputKey.trim().toUpperCase() === expected;
 
     if (isValid) {
@@ -108,8 +109,8 @@ async function validateLicenseKey(inputKey) {
         fs.writeFileSync(licensePath, JSON.stringify({
           activated: true,
           key: inputKey.trim().toUpperCase(),
+          email: (email || '').trim().toLowerCase(),
           activatedAt: new Date().toISOString(),
-          // Store trial expiry if server provided it (null for paid licenses)
           expiresAt: meta?.expiresAt || null,
         }), 'utf8');
       } catch (saveError) {

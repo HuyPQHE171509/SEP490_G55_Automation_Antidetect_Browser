@@ -11,8 +11,9 @@ const payos = new PayOS({
 // Must match machineId.js in the Electron app exactly
 const LICENSE_SECRET = 'HL-MCK-SEP490-G55-2024';
 
-function deriveLicenseKey(machineCode) {
-  const raw = machineCode.replace(/\s/g, '') + LICENSE_SECRET;
+function deriveLicenseKey(machineCode, email) {
+  const normalizedEmail = (email || '').trim().toLowerCase();
+  const raw = machineCode.replace(/\s/g, '') + normalizedEmail + LICENSE_SECRET;
   const hash = createHash('sha256').update(raw).digest('hex').toUpperCase();
   return `HL-${hash.slice(0, 4)}-${hash.slice(4, 8)}-${hash.slice(8, 12)}`;
 }
@@ -64,7 +65,8 @@ export default async function handler(req, res) {
     // Already activated on THIS machine → idempotent (return same key)
     if (order?.activatedMachine) {
       if (order.activatedMachine === normalizedMachine) {
-        const key = deriveLicenseKey(normalizedMachine);
+        const email = (userEmail || order.userEmail || '').toLowerCase().trim();
+        const key = deriveLicenseKey(normalizedMachine, email);
         console.log(`[activate-license] Already activated order ${orderCode} for same machine → ${key}`);
         return res.status(200).json({ licenseKey: key });
       }
@@ -74,13 +76,14 @@ export default async function handler(req, res) {
       });
     }
 
-    // First activation — bind machine and derive key
-    const licenseKey = deriveLicenseKey(normalizedMachine);
+    // First activation — bind machine + email and derive key
+    const normalizedEmail = (userEmail || '').toLowerCase().trim();
+    const licenseKey = deriveLicenseKey(normalizedMachine, normalizedEmail);
     await updateOrder(String(orderCode), {
       activatedMachine: normalizedMachine,
       licenseKey,
       activatedAt: new Date().toISOString(),
-      ...(userEmail ? { userEmail: userEmail.toLowerCase().trim() } : {}),
+      ...(normalizedEmail ? { userEmail: normalizedEmail } : {}),
     });
 
     console.log(`[activate-license] Order ${orderCode} activated → ${licenseKey}`);
