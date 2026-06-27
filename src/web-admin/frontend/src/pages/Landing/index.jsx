@@ -480,15 +480,23 @@ const LandingPage = () => {
                         ),
                       },
                       { type: 'divider' },
-                      ...(user?.role === 'admin' ? [{
-                        key: 'dashboard',
-                        label: (
-                          <Link to="/dashboard" className="flex items-center gap-2 text-slate-300">
-                            <LayoutDashboard size={14} />
-                            Dashboard
-                          </Link>
-                        ),
-                      }] : []),
+                        ...(user?.role === 'admin' ? [{
+                          key: 'dashboard',
+                          label: (
+                            <Link to="/dashboard" className="flex items-center gap-2 text-slate-300">
+                              <LayoutDashboard size={14} />
+                              Dashboard
+                            </Link>
+                          ),
+                        }] : [{
+                          key: 'my-profiles',
+                          label: (
+                            <Link to="/my-profiles" className="flex items-center gap-2 text-slate-300">
+                              <LayoutDashboard size={14} />
+                              My Profiles
+                            </Link>
+                          ),
+                        }]),
                       {
                         key: 'logout',
                         label: (
@@ -575,12 +583,16 @@ const LandingPage = () => {
               </a>
             ))}
             {isAuthenticated ? (
-              <>
-                {user?.role === 'admin' && (
-                  <Link to="/dashboard" onClick={() => setMenuOpen(false)} className="block text-sm font-medium text-primary py-1">
-                    Dashboard →
-                  </Link>
-                )}
+                <>
+                  {user?.role === 'admin' ? (
+                    <Link to="/dashboard" onClick={() => setMenuOpen(false)} className="block text-sm font-medium text-primary py-1">
+                      Dashboard &rarr;
+                    </Link>
+                  ) : (
+                    <Link to="/my-profiles" onClick={() => setMenuOpen(false)} className="block text-sm font-medium text-primary py-1">
+                      My Profiles &rarr;
+                    </Link>
+                  )}
                 <button
                   onClick={() => { setMenuOpen(false); handleLogout(); }}
                   className="block text-sm font-medium text-rose-400 py-1 text-left"

@@ -18,8 +18,6 @@ import { listLicenses, resetMachine, revokeLicense } from '../api/admin/licenses
 import adminUsers from '../api/admin/users.js';
 import adminNotifications from '../api/admin/notifications.js';
 import { requireAdmin } from '../api/admin/middleware.js';
-import { requireUser } from '../api/auth-middleware.js';
-import { getCloudProfiles, saveCloudProfile, uploadCloudProfileData, downloadCloudProfileData, deleteCloudProfile, uploadProfileDataMiddleware } from '../api/cloud-profiles.js';
 import { requireAdminOrUploadToken } from '../api/admin/uploadAuth.js';
 import {
   listReleases,
@@ -56,13 +54,6 @@ app.post('/api/request-trial', requestTrial);
 app.post('/api/verify-machine', verifyMachine);
 app.post('/api/deactivate-machine', deactivateMachine);
 app.post('/api/reactivate-machine', reactivateMachine);
-
-// Cloud Sync endpoints (require Firebase auth token from either Desktop App or Web)
-app.get('/api/cloud-profiles', requireUser, getCloudProfiles);
-app.post('/api/cloud-profiles', requireUser, saveCloudProfile);
-app.delete('/api/cloud-profiles/:id', requireUser, deleteCloudProfile);
-app.post('/api/cloud-profiles/:id/upload', requireUser, uploadProfileDataMiddleware, uploadCloudProfileData);
-app.get('/api/cloud-profiles/:id/download', requireUser, downloadCloudProfileData);
 
 // Download tracking + redirect
 app.get('/api/download/info', downloadInfo);

@@ -80,7 +80,7 @@ const LoginPage = () => {
     } else if (user.role === 'admin') {
       navigate('/dashboard', { replace: true });
     } else {
-      navigate('/', { replace: true });
+      navigate('/my-profiles', { replace: true });
     }
   };
 

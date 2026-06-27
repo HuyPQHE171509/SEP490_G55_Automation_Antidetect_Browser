@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getProfileLog: (profileId) => ipcRenderer.invoke('get-profile-log', profileId),
   cloneProfile: (profileId, overrides) => ipcRenderer.invoke('clone-profile', profileId, overrides),
   saveProfilesBulk: (profiles) => ipcRenderer.invoke('save-profiles-bulk', profiles),
+  syncLocalProfiles: (profilesList) => ipcRenderer.invoke('sync-local-profiles', profilesList),
   deleteProfilesBulk: (ids) => ipcRenderer.invoke('delete-profiles-bulk', ids),
   cloneProfilesBulk: (sourceIds, overrides) => ipcRenderer.invoke('clone-profiles-bulk', sourceIds, overrides || {}),
   runAutomationNow: (profileId) => ipcRenderer.invoke('run-automation-now', profileId),

@@ -49,7 +49,7 @@ export const GuestRoute = ({ children }) => {
   const { isAuthenticated, user } = useAuthStore();
 
   if (isAuthenticated) {
-    return <Navigate to={user?.role === 'admin' ? '/dashboard' : '/'} replace />;
+    return <Navigate to={user?.role === 'admin' ? '/dashboard' : '/my-profiles'} replace />;
   }
 
   return children;

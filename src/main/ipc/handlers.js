@@ -22,7 +22,7 @@ const {
   getLocalesTimezonesInternal,
   runAutomationNowInternal,
 } = require('../controllers/profiles');
-const { getProfilesInternal, saveProfileInternal, deleteProfileInternal, cloneProfileInternal, saveProfilesBulkInternal, deleteProfilesBulkInternal, cloneProfilesBulkInternal } = require('../storage/profiles');
+const { getProfilesInternal, saveProfileInternal, deleteProfileInternal, cloneProfileInternal, saveProfilesBulkInternal, deleteProfilesBulkInternal, cloneProfilesBulkInternal, syncProfilesInternal } = require('../storage/profiles');
 const { loadSettings, saveSettings } = require('../storage/settings');
 const { listPresetsInternal, addPresetInternal, deletePresetInternal } = require('../storage/presets');
 const { performAction } = require('../engine/actions');
@@ -380,6 +380,11 @@ function registerIpcHandlers(extra = {}) {
   });
 
   // Xử lý Profile hàng loạt (Thêm, Sửa, Xóa nhiều Profile cùng lúc)
+  handle('sync-local-profiles', async (_e, profilesList) => {
+    const r = await syncProfilesInternal(profilesList);
+    if (r?.success) appendLog('system', `Local profiles synced from cloud (${profilesList?.length || 0} items)`);
+    return r;
+  });
   handle('save-profiles-bulk', async (_e, profiles) => {
     const r = await saveProfilesBulkInternal(profiles);
     if (r?.success) appendLog('system', `Bulk saved ${r.profiles?.length || 0} profile(s)`);

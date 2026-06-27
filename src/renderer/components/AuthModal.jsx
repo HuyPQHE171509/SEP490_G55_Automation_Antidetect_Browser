@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Mail, Lock, LogIn, ShieldCheck, Eye, EyeOff } from 'lucide-react';
-import { auth, googleProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from '../services/firebase';
+import { auth, googleProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, upsertUserDoc } from '../services/firebase';
 import './AuthModal.css';
 
 const GoogleIcon = () => (
@@ -55,9 +55,11 @@ const AuthModal = ({ onLoginSuccess }) => {
         let cred;
         if (isLogin) {
           cred = await signInWithEmailAndPassword(auth, email, password);
+          await upsertUserDoc(cred.user, { provider: 'local' });
           await handleSuccess(cred);
         } else {
           cred = await createUserWithEmailAndPassword(auth, email, password);
+          await upsertUserDoc(cred.user, { provider: 'local', createdAt: new Date().toISOString() });
           await auth.signOut();
           setIsLogin(true);
           setPassword('');
@@ -84,6 +86,7 @@ const AuthModal = ({ onLoginSuccess }) => {
     setOauthLoading(true);
     try {
       const cred = await signInWithPopup(auth, googleProvider);
+      await upsertUserDoc(cred.user, { provider: 'google' });
       await handleSuccess(cred);
     } catch (err) {
       if (err.code !== 'auth/popup-closed-by-user') {
