@@ -422,12 +422,13 @@ async function launchProfileInternal(profileId, options = {}) {
     // identitySectionEnabled: toggle tổng của nhóm "Identity" trong UI —
     // tắt toàn bộ nhóm này sẽ tắt luôn UA, ngôn ngữ, timezone.
     const identitySectionEnabled = settings?.identity?.enabled !== false;
+    const displaySectionEnabled = settings?.display?.enabled === true;
     // Các cờ applyXxx: kết hợp safeMode + toggle nhóm + toggle riêng từng mục.
     // Chỉ khi tất cả điều kiện đều true thì override tương ứng mới được áp dụng.
     const applyUA = !safeMode && apply.userAgent !== false && identitySectionEnabled;
     const applyLang = !safeMode && apply.language !== false && identitySectionEnabled;
     const applyTz = !safeMode && apply.timezone !== false && identitySectionEnabled;
-    const applyViewport = apply.viewport !== false; // viewport is safe even in safeMode
+    const applyViewport = apply.viewport !== false && displaySectionEnabled;
     const applyGeo = !safeMode && apply.geolocation !== false;
     // contextOptions: tập hợp tất cả tùy chọn sẽ truyền vào browser.newContext() —
     // đây là nơi Playwright áp dụng giả mạo ở cấp độ browser context (UA, locale, timezone,
@@ -479,6 +480,10 @@ async function launchProfileInternal(profileId, options = {}) {
         if (m) contextOptions.viewport = { width: Math.max(1, parseInt(m[1], 10)), height: Math.max(1, parseInt(m[2], 10)) };
         const dpr = Number((settings.advanced || {}).devicePixelRatio || 1);
         if (dpr > 0) contextOptions.deviceScaleFactor = dpr;
+      } else {
+        // Display not enabled — let the browser window size dictate the viewport naturally.
+        // Setting null disables Playwright's fixed viewport so content fills the real window.
+        contextOptions.viewport = null;
       }
     } catch { }
     // Thiết lập vị trí địa lý giả — Playwright inject vào browser context.

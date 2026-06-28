@@ -198,7 +198,6 @@ const generateConsistentFingerprint = () => {
       gpuVendor: gpu.v, gpuRenderer: gpu.r,
       webrtc: randomFrom(['Public + private', 'Default', 'Disable non-proxied UDP', 'Public interface only']),
       mediaDevices: { speakers: randomInt(1, 3), microphones: randomInt(0, 2), webcams: randomInt(0, 1), audio: true, video: true },
-      windowWidth: screen.w, windowHeight: screen.h,
       advanced: {
         platform: plat, dnt: false, devicePixelRatio: pixelRatio,
         maxTouchPoints: 0, webglVendor: gpu.v, webglRenderer: gpu.r,
