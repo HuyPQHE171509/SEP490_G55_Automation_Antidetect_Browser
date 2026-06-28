@@ -327,7 +327,7 @@ function App() {
     // Also try immediately — in dev, handlers are usually ready already
     loadProfiles();
     return () => { try { unsub?.(); } catch {} };
-  }, []);
+  }, [api]);
 
   // Subscribe to profile updates
   useEffect(() => {
@@ -339,7 +339,8 @@ function App() {
       try { unsub?.(); } catch {}
       try { window.electronAPI?.removeAllProfilesUpdated?.(); } catch {}
     };
-  }, []);
+  }, [api]);
+
   useEffect(() => {
     let unsub;
     let pollTimer;
@@ -400,6 +401,11 @@ function App() {
       await refreshRunningStatus(data);
     } catch (e) { console.error('Error loading profiles:', e); }
   };
+
+  // Reload profiles whenever the logged-in user changes (login/logout/switch account)
+  useEffect(() => {
+    loadProfiles();
+  }, [api]);
 
   const refreshRunningStatus = async (list = profiles) => {
     try {

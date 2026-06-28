@@ -58,7 +58,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "XuanKien1",
+        "owner": "HuyPQHE171509",
         "repo": "hlmck-releases",
         "releaseType": "draft"
       }
