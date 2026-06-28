@@ -609,6 +609,18 @@ async function cloneProfilesBulkInternal(sourceIds, overrides = {}) {
   }
 }
 
+async function syncProfilesInternal(profilesList) {
+  try {
+    if (!Array.isArray(profilesList)) {
+      return { success: false, error: 'Payload must be an array' };
+    }
+    writeProfiles(profilesList);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
 module.exports = {
   getProfilesInternal,
   saveProfileInternal,
@@ -617,6 +629,7 @@ module.exports = {
   saveProfilesBulkInternal,
   deleteProfilesBulkInternal,
   cloneProfilesBulkInternal,
+  syncProfilesInternal,
   readProfiles,
   writeProfiles,
   updateProfileSettings,

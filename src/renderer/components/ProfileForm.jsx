@@ -949,10 +949,75 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
     </>
   );
 
-  const renderNetwork = () => (
+  const renderNetwork = () => {
+    const proxyType = formData.settings.proxy?.type || 'none';
+    const isNoProxy = proxyType === 'none';
+    
+    return (
     <>
-      <ToggleHeader id="network" label="Network & Navigator" desc="WebRTC IP handling policy and navigator network/privacy properties" enabled={sectionToggles.network} onToggle={() => toggleSection('network')} />
+      <ToggleHeader id="network" label="Network & Navigator" desc="Proxy, WebRTC handling policy and network properties" enabled={sectionToggles.network} onToggle={() => toggleSection('network')} />
       <div className={sectionToggles.network ? '' : 'pf-section-disabled'}>
+        <fieldset className="pf-fieldset">
+          <legend className="pf-legend">Proxy Settings</legend>
+          <div className="pf-row-3">
+            <div className="pf-field">
+              <label className="pf-label">Type</label>
+              <select className="pf-select" value={proxyType} onChange={e => setFormData(p => ({ ...p, settings: { ...p.settings, proxy: { ...(p.settings.proxy || {}), type: e.target.value } } }))}>
+                <option value="none">Direct (No Proxy)</option>
+                <option value="http">HTTP/HTTPS</option>
+                <option value="socks5">SOCKS5</option>
+              </select>
+            </div>
+            <div className="pf-field" style={{ flex: 2 }}>
+              <label className="pf-label">Server (IP:Port)</label>
+              <input type="text" className="pf-input" placeholder="192.168.1.1:8080" disabled={isNoProxy} value={formData.settings.proxy?.server || ''} onChange={e => setFormData(p => ({ ...p, settings: { ...p.settings, proxy: { ...(p.settings.proxy || {}), server: e.target.value, type: proxyType !== 'none' ? proxyType : 'http' } } }))} />
+            </div>
+          </div>
+          <div className="pf-row">
+            <div className="pf-field">
+              <label className="pf-label">Username (Optional)</label>
+              <input type="text" className="pf-input" disabled={isNoProxy} value={formData.settings.proxy?.username || ''} onChange={e => setFormData(p => ({ ...p, settings: { ...p.settings, proxy: { ...(p.settings.proxy || {}), username: e.target.value, type: proxyType !== 'none' ? proxyType : 'http' } } }))} />
+            </div>
+            <div className="pf-field">
+              <label className="pf-label">Password (Optional)</label>
+              <input type="password" className="pf-input" disabled={isNoProxy} value={formData.settings.proxy?.password || ''} onChange={e => setFormData(p => ({ ...p, settings: { ...p.settings, proxy: { ...(p.settings.proxy || {}), password: e.target.value, type: proxyType !== 'none' ? proxyType : 'http' } } }))} />
+            </div>
+          </div>
+          <div className="pf-field pf-mb">
+            <label className="pf-label">Proxy Rotation URL (Optional)</label>
+            <div className="pf-row" style={{ gap: '8px' }}>
+              <input type="text" className="pf-input" disabled={isNoProxy} value={formData.settings.proxy?.rotateUrl || ''} onChange={e => setFormData(p => ({ ...p, settings: { ...p.settings, proxy: { ...(p.settings.proxy || {}), rotateUrl: e.target.value, type: proxyType !== 'none' ? proxyType : 'http' } } }))} placeholder="https://api.proxyservice.com/rotate?key=..." />
+              <button type="button" className="pf-btn pf-btn-cancel" disabled={isNoProxy || proxyRotating} onClick={handleRotateProxy} style={{ flex: '0 0 auto' }}>
+                {proxyRotating ? 'Rotating...' : 'Rotate'}
+              </button>
+            </div>
+            {proxyRotateResult && (
+              <p style={{ marginTop: '4px', fontSize: '12px', color: proxyRotateResult.success ? '#10b981' : '#ef4444' }}>
+                {proxyRotateResult.success ? `Rotation successful (${proxyRotateResult.latency}ms)` : `Error: ${proxyRotateResult.error}`}
+              </p>
+            )}
+          </div>
+          <div className="pf-row">
+            <button type="button" className="pf-btn pf-btn-create" disabled={isNoProxy || proxyChecking} onClick={handleCheckProxy} style={{ width: 'max-content', padding: '6px 16px', fontSize: '13px' }}>
+              {proxyChecking ? 'Checking...' : 'Check Proxy'}
+            </button>
+          </div>
+          {proxyCheckResult && (
+            <div className="pf-info-box" style={{ marginTop: '12px', borderColor: proxyCheckResult.alive ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)', backgroundColor: proxyCheckResult.alive ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)' }}>
+              {proxyCheckResult.alive ? (
+                <>
+                  <div className="pf-info-row"><span style={{ color: '#10b981', fontWeight: 500 }}>Status: Alive</span><span>Latency: {proxyCheckResult.latency}ms</span></div>
+                  <div className="pf-info-row"><span>IP:</span><span>{proxyCheckResult.ip}</span></div>
+                  <div className="pf-info-row"><span>Location:</span><span>{proxyCheckResult.city}, {proxyCheckResult.countryCode}</span></div>
+                  <div className="pf-info-row"><span>Timezone:</span><span>{proxyCheckResult.timezone}</span></div>
+                </>
+              ) : (
+                <div className="pf-info-row"><span style={{ color: '#ef4444', fontWeight: 500 }}>Status: Dead</span><span style={{ color: '#ef4444' }}>{proxyCheckResult.error}</span></div>
+              )}
+            </div>
+          )}
+        </fieldset>
+
         <fieldset className="pf-fieldset">
           <legend className="pf-legend">WebRTC</legend>
           <div className="pf-field">
@@ -1006,6 +1071,7 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
       </div>
     </>
   );
+  };
 
 
 

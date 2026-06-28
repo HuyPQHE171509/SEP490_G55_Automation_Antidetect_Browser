@@ -22,7 +22,7 @@ const {
   getLocalesTimezonesInternal,
   runAutomationNowInternal,
 } = require('../controllers/profiles');
-const { getProfilesInternal, saveProfileInternal, deleteProfileInternal, cloneProfileInternal, saveProfilesBulkInternal, deleteProfilesBulkInternal, cloneProfilesBulkInternal } = require('../storage/profiles');
+const { getProfilesInternal, saveProfileInternal, deleteProfileInternal, cloneProfileInternal, saveProfilesBulkInternal, deleteProfilesBulkInternal, cloneProfilesBulkInternal, syncProfilesInternal } = require('../storage/profiles');
 const { loadSettings, saveSettings } = require('../storage/settings');
 const { listPresetsInternal, addPresetInternal, deletePresetInternal } = require('../storage/presets');
 const { performAction } = require('../engine/actions');
@@ -285,7 +285,7 @@ function registerIpcHandlers(extra = {}) {
 
   // Quản lý Mã máy (Machine Code) & Giấy phép (License)
   handle('get-machine-code', () => getMachineCode());
-  handle('validate-license', (_e, key) => validateLicenseKey(key));
+  handle('validate-license', (_e, key, email) => validateLicenseKey(key, email));
   handle('deactivate-license', () => deactivateLicense());
 
   // Quản lý Môi trường chạy Trình duyệt (Browser Runtime Manager)
@@ -334,14 +334,14 @@ function registerIpcHandlers(extra = {}) {
     return r;
   });
   // [UC_08.06 / UC_15.02] Dừng trình duyệt đang chạy của profile
-  handle('stop-profile', async (_e, profileId) => {
+  handle('stop-profile', async (_e, profileId, options = {}) => {
     appendLog(profileId, 'Profile stop requested');
-    return await stopProfileInternal(profileId);
+    return await stopProfileInternal(profileId, options);
   });
   // [UC_08.06] Dừng tất cả trình duyệt đang chạy
-  handle('stop-all-profiles', async () => {
+  handle('stop-all-profiles', async (_e, options = {}) => {
     appendLog('system', 'Stop all profiles requested');
-    return await stopAllProfilesInternal();
+    return await stopAllProfilesInternal(options);
   });
   handle('get-profile-log', async (_e, profileId) => await getProfileLogInternal(profileId));
   handle('get-cookies', async (_e, profileId) => await getCookiesInternal(profileId));
@@ -380,6 +380,11 @@ function registerIpcHandlers(extra = {}) {
   });
 
   // Xử lý Profile hàng loạt (Thêm, Sửa, Xóa nhiều Profile cùng lúc)
+  handle('sync-local-profiles', async (_e, profilesList) => {
+    const r = await syncProfilesInternal(profilesList);
+    if (r?.success) appendLog('system', `Local profiles synced from cloud (${profilesList?.length || 0} items)`);
+    return r;
+  });
   handle('save-profiles-bulk', async (_e, profiles) => {
     const r = await saveProfilesBulkInternal(profiles);
     if (r?.success) appendLog('system', `Bulk saved ${r.profiles?.length || 0} profile(s)`);

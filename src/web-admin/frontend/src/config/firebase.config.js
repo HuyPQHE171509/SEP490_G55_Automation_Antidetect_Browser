@@ -9,13 +9,13 @@
  */
 
 export const firebaseConfig = {
-  apiKey:            "AIzaSyBd91xSxuAmEqowfgo6BfI8mnCnmtV4tJM",
-  authDomain:        "hl-mck.firebaseapp.com",
-  projectId:         "hl-mck",
-  storageBucket:     "hl-mck.firebasestorage.app",
-  messagingSenderId: "858431704893",
-  appId:             "1:858431704893:web:e4e7de76609f677fb47f54",
-  measurementId:     "G-M5YF1LD2CQ",
+  apiKey: "AIzaSyD6x7MTOjOsh_QCLy2NAxHEVM2FL3j1fbU",
+  authDomain: "huymck-98553.firebaseapp.com",
+  projectId: "huymck-98553",
+  storageBucket: "huymck-98553.firebasestorage.app",
+  messagingSenderId: "119485242404",
+  appId: "1:119485242404:web:30cfa89fae7a7a3011ccb1",
+  measurementId: "G-CY2C3RKY0Q"
 };
 
 /**
@@ -25,5 +25,5 @@ export const firebaseConfig = {
  * ╚══════════════════════════════════════════════════════════════════╝
  */
 export const ADMIN_EMAILS = [
-  "xuankien090103@gmail.com",
+  "huyrongbaoto@gmail.com",
 ];

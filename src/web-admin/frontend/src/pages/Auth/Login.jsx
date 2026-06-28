@@ -37,7 +37,7 @@ function parseFirebaseError(err) {
       'This email is already registered with a different method.',
     'auth/network-request-failed': 'Network error. Check your connection and try again.',
     'auth/configuration-not-found':
-      'Firebase is not configured. Please fill in firebaseConfig in src/config/firebase.config.js',
+      'Google Sign-In is not enabled. Please enable it in Firebase Console -> Authentication -> Sign-in method.',
   };
   return map[code] || err?.message || 'An error occurred. Please try again.';
 }
@@ -80,7 +80,7 @@ const LoginPage = () => {
     } else if (user.role === 'admin') {
       navigate('/dashboard', { replace: true });
     } else {
-      navigate('/', { replace: true });
+      navigate('/my-profiles', { replace: true });
     }
   };
 

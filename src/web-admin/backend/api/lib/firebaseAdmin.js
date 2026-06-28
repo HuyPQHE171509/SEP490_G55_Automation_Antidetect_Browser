@@ -20,11 +20,11 @@ export async function verifyFirebaseToken(token) {
       await initAdminApp();
       const { getAuth } = await import('firebase-admin/auth');
       const decoded = await getAuth().verifyIdToken(token);
-      return decoded.email?.toLowerCase() || null;
+      return { uid: decoded.uid, email: decoded.email?.toLowerCase() || null };
     }
     // Dev fallback: decode without verification
     const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
-    return payload.email?.toLowerCase() || null;
+    return { uid: payload.user_id || payload.uid, email: payload.email?.toLowerCase() || null };
   } catch {
     return null;
   }

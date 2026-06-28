@@ -16,11 +16,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getProfileWs: (profileId) => ipcRenderer.invoke('get-profile-ws', profileId),
   getRunningMap: () => ipcRenderer.invoke('get-running-map'),
   getStatusMap: () => ipcRenderer.invoke('get-status-map'),
-  stopProfile: (profileId) => ipcRenderer.invoke('stop-profile', profileId),
-  stopAllProfiles: () => ipcRenderer.invoke('stop-all-profiles'),
+  stopProfile: (profileId, options) => ipcRenderer.invoke('stop-profile', profileId, options),
+  stopAllProfiles: (options) => ipcRenderer.invoke('stop-all-profiles', options),
   getProfileLog: (profileId) => ipcRenderer.invoke('get-profile-log', profileId),
   cloneProfile: (profileId, overrides) => ipcRenderer.invoke('clone-profile', profileId, overrides),
   saveProfilesBulk: (profiles) => ipcRenderer.invoke('save-profiles-bulk', profiles),
+  syncLocalProfiles: (profilesList) => ipcRenderer.invoke('sync-local-profiles', profilesList),
   deleteProfilesBulk: (ids) => ipcRenderer.invoke('delete-profiles-bulk', ids),
   cloneProfilesBulk: (sourceIds, overrides) => ipcRenderer.invoke('clone-profiles-bulk', sourceIds, overrides || {}),
   runAutomationNow: (profileId) => ipcRenderer.invoke('run-automation-now', profileId),
@@ -86,7 +87,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Machine License
   getMachineCode: () => ipcRenderer.invoke('get-machine-code'),
-  validateLicense: (key) => ipcRenderer.invoke('validate-license', key),
+  validateLicense: (key, email) => ipcRenderer.invoke('validate-license', key, email),
   deactivateLicense: () => ipcRenderer.invoke('deactivate-license'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 

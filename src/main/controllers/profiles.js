@@ -109,6 +109,9 @@ async function launchProfileInternal(profileId, options = {}) {
       const running = runningProfiles.get(profileId);
       return { success: true, wsEndpoint: running.wsEndpoint || 'pipe' };
     }
+
+
+
     const settings = profile.settings || {};
     let startUrl = settings.startupPage || profile.startUrl || 'https://hlmck.vercel.app/';
     if (startUrl === 'https://www.google.com' || startUrl === 'https://www.google.com/') {
@@ -672,6 +675,8 @@ async function launchProfileInternal(profileId, options = {}) {
       try { await context.close(); } catch { } // đóng browser context (tắt tất cả tab)
       try { await browser?.close?.(); } catch { } // đóng browser process
       broadcastRunningMap(); // thông báo UI cập nhật trạng thái profile thành STOPPED
+
+
     };
     // Lắng nghe sự kiện đóng từ phía Playwright — context.close() hoặc browser crash/disconnect
     context.on('close', () => cleanupPlaywright('Context closed'));

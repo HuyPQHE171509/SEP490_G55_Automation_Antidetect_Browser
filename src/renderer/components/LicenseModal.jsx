@@ -2,13 +2,13 @@ import React, { useState } from 'react';
 import { getCheckoutUrl } from '../config/app.config';
 import { useI18n } from '../i18n/index';
 
-const LICENSE_KEY = 'hl-license-activated';
-
 export default function LicenseModal({ onClose, onActivated }) {
     const { t } = useI18n();
     const [licenseKey, setLicenseKey] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const userEmail = localStorage.getItem('firebase_email') || '';
+    const userLicenseKey = `hl-license-activated_${userEmail}`;
 
     const handleActivate = async () => {
         const key = licenseKey.trim();
@@ -19,9 +19,9 @@ export default function LicenseModal({ onClose, onActivated }) {
         setLoading(true);
         setError('');
         try {
-            const result = await window.electronAPI.validateLicense(key);
+            const result = await window.electronAPI.validateLicense(key, userEmail);
             if (result?.valid) {
-                localStorage.setItem(LICENSE_KEY, key);
+                localStorage.setItem(userLicenseKey, key);
                 onActivated?.(result);
             } else {
                 setError(t('license.error.invalid', 'Invalid license key for this machine.'));

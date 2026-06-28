@@ -17,7 +17,9 @@ export default function SettingsTab({
     const { t } = useI18n();
     const [licenseKey, setLicenseKey] = useState('');
     const [machineCode, setMachineCode] = useState('Loading...');
-    const [licenseStatus, setLicenseStatus] = useState(() => !!localStorage.getItem('hl-license-activated'));
+    const userEmail = localStorage.getItem('firebase_email') || '';
+    const userLicenseKey = `hl-license-activated_${userEmail}`;
+    const [licenseStatus, setLicenseStatus] = useState(() => !!localStorage.getItem(`hl-license-activated_${localStorage.getItem('firebase_email') || ''}`));
     const [licenseError, setLicenseError] = useState('');
     const [licenseLoading, setLicenseLoading] = useState(false);
     const [confirmDeactivate, setConfirmDeactivate] = useState(false);
@@ -55,9 +57,9 @@ export default function SettingsTab({
         setLicenseLoading(true);
         setLicenseError('');
         try {
-            const result = await window.electronAPI.validateLicense(key);
+            const result = await window.electronAPI.validateLicense(key, userEmail);
             if (result?.valid) {
-                localStorage.setItem('hl-license-activated', key);
+                localStorage.setItem(userLicenseKey, key);
                 setLicenseStatus(true);
             } else {
                 setLicenseError(t('license.error.invalid', 'Invalid license key for this machine.'));
@@ -73,7 +75,7 @@ export default function SettingsTab({
         if (window.electronAPI.deactivateLicense) {
             await window.electronAPI.deactivateLicense();
         }
-        localStorage.removeItem('hl-license-activated');
+        localStorage.removeItem(userLicenseKey);
         setLicenseStatus(false);
         setLicenseKey('');
         setConfirmDeactivate(false);

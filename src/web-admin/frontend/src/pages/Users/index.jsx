@@ -14,47 +14,81 @@ export default function Users() {
 
   useEffect(() => {
     async function load() {
-      // 1. Load Pro/Trial status from backend (orders-based)
-      const proMap = {};
-      const trialMap = {};
+      // 1. Load users from backend (Firebase Auth Admin + Orders)
+      let authUsers = [];
       try {
         const backendData = await getUsers();
-        for (const u of backendData.users || []) {
-          if (u.email) {
-            proMap[u.email.toLowerCase()] = u.isPro;
-            trialMap[u.email.toLowerCase()] = u.isTrial;
-          }
-        }
-      } catch {
-        // Non-fatal — Pro status just won't be shown
+        authUsers = backendData.users || [];
+      } catch (err) {
+        console.warn('Failed to load users from backend', err);
       }
 
-      // 2. Load users from Firestore directly
-      const snap = await getDocs(collection(db, 'users'));
-      const firestoreUsers = snap.docs.map(d => {
-        const data = d.data();
-        const email = data.email?.toLowerCase() || '';
-        return {
-          uid: d.id,
-          email: data.email || null,
-          displayName: data.displayName || null,
-          role: data.role || 'user',
-          provider: data.provider || 'local',
-          emailVerified: data.emailVerified ?? false,
-          createdAt: data.createdAt || null,
-          lastSignIn: data.lastSignIn || null,
-          isPro: proMap[email] || false,
-          isTrial: trialMap[email] || false,
-        };
-      });
+      // 2. Load users from Firestore directly (to get roles and display names)
+      const firestoreMap = {};
+      try {
+        const snap = await getDocs(collection(db, 'users'));
+        snap.docs.forEach(d => {
+          const data = d.data();
+          if (data.email) {
+            firestoreMap[data.email.toLowerCase()] = {
+              uid: d.id,
+              ...data
+            };
+          }
+        });
+      } catch (err) {
+        console.warn('Failed to load users from firestore', err);
+      }
+
+      // 3. Merge them
+      const mergedMap = new Map();
+      
+      // Add auth users first (this guarantees all registered users show up)
+      for (const u of authUsers) {
+        if (!u.email) continue;
+        const email = u.email.toLowerCase();
+        const fsUser = firestoreMap[email] || {};
+        mergedMap.set(email, {
+          uid: u.uid || fsUser.uid,
+          email: u.email,
+          displayName: u.displayName || fsUser.displayName || null,
+          role: fsUser.role || 'user',
+          provider: u.provider || fsUser.provider || 'local',
+          emailVerified: u.emailVerified || fsUser.emailVerified || false,
+          createdAt: u.createdAt || fsUser.createdAt || null,
+          lastSignIn: u.lastSignIn || fsUser.lastSignIn || null,
+          isPro: u.isPro || false,
+          isTrial: u.isTrial || false,
+        });
+      }
+
+      // Add any stray firestore users that aren't in Auth (rare but possible)
+      for (const [email, fsUser] of Object.entries(firestoreMap)) {
+        if (!mergedMap.has(email)) {
+          mergedMap.set(email, {
+            uid: fsUser.uid,
+            email: fsUser.email,
+            displayName: fsUser.displayName || null,
+            role: fsUser.role || 'user',
+            provider: fsUser.provider || 'local',
+            emailVerified: fsUser.emailVerified || false,
+            createdAt: fsUser.createdAt || null,
+            lastSignIn: fsUser.lastSignIn || null,
+            isPro: false,
+            isTrial: false,
+          });
+        }
+      }
+
+      const finalUsers = Array.from(mergedMap.values());
 
       // Sort: admin first, then by createdAt desc
-      firestoreUsers.sort((a, b) => {
+      finalUsers.sort((a, b) => {
         if (a.role !== b.role) return a.role === 'admin' ? -1 : 1;
         return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
       });
 
-      setUsers(firestoreUsers);
+      setUsers(finalUsers);
     }
 
     load()

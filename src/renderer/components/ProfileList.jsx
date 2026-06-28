@@ -28,6 +28,7 @@ function ProxyPickerPopup({ profile, isRunning = false, onClose, onSaved }) {
   }, [onClose]);
 
   const currentServer = profile?.settings?.proxy?.server || '';
+  const currentProxyId = profile?.settings?.proxy?.id;
 
   const handleSelect = async (proxy) => {
     setSaving(true);
@@ -60,6 +61,7 @@ function ProxyPickerPopup({ profile, isRunning = false, onClose, onSaved }) {
         settings: {
           ...profile.settings,
           proxy: proxy ? {
+            id: proxy.id,
             type: proxy.type || 'http',
             server,
             username: proxy.username || '',
@@ -68,9 +70,9 @@ function ProxyPickerPopup({ profile, isRunning = false, onClose, onSaved }) {
           } : { type: 'none', server: '', username: '', password: '' },
         },
       };
-      const res = await window.electronAPI.saveProfile(updated);
-      if (res?.success) { onSaved(res.profile || updated); onClose(); }
-      else alert(res?.error || 'Failed to save');
+      const res = await onSaved(updated);
+      if (res?.success === false) alert(res?.error || 'Failed to save');
+      else onClose();
     } catch (e) { alert(e.message); }
     setSaving(false);
   };
@@ -132,7 +134,7 @@ function ProxyPickerPopup({ profile, isRunning = false, onClose, onSaved }) {
               )}
               {filtered.map(p => {
                 const server = `${p.host}:${p.port}`;
-                const isCurrent = currentServer === server;
+                const isCurrent = currentProxyId ? p.id === currentProxyId : (currentServer === server && profile?.settings?.proxy?.username === (p.username || ''));
                 return (
                   <div
                     key={p.id}
@@ -234,6 +236,7 @@ export default function ProfileList({
   onToggleFp,
   onReloadProfiles,
   onViewLiveScreen,
+  onSaveProfile,
 }) {
   // Search, filter, sort
   const [searchQuery, setSearchQuery] = useState('');
@@ -712,6 +715,9 @@ export default function ProfileList({
           onClose={() => setProxyPickerProfile(null)}
           onSaved={async (updatedProfile) => {
             setProxyPickerProfile(null);
+            if (onSaveProfile) {
+              await onSaveProfile(updatedProfile);
+            }
             onReloadProfiles?.();
             if (proxyPickerProfile.isRunning) {
               // Restart to apply new proxy
@@ -719,6 +725,7 @@ export default function ProfileList({
               await new Promise(r => setTimeout(r, 800));
               await window.electronAPI.launchProfile(updatedProfile.id, {});
             }
+            return { success: true };
           }}
         />
       )}

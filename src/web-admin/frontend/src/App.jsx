@@ -18,6 +18,7 @@ import { useAuthStore } from './store/authStore';
 import CheckoutPage from './pages/Checkout';
 import CheckoutSuccessPage from './pages/Checkout/Success';
 import MyLicensePage from './pages/MyLicense';
+import MyProfilesPage from './pages/MyProfiles';
 
 // ─── Full-screen maintenance page ─────────────────────────────────────────────
 function MaintenancePage({ banner }) {
@@ -63,13 +64,14 @@ function App() {
           toastOptions={{ className: 'dark:bg-slate-800 dark:text-white border border-primary/20' }}
         />
         <Routes>
-          {/* ── Public ───────────────────────────────────────────────────── */}
+          {/* ── Public / Root (Landing Page) ──────────────────────────────── */}
           <Route path="/" element={<LandingPage />} />
 
           {/* ── Checkout (requires login) ───────────────────────────────── */}
           <Route path="/checkout" element={<UserRoute><CheckoutPage /></UserRoute>} />
           <Route path="/checkout/success" element={<UserRoute><CheckoutSuccessPage /></UserRoute>} />
           <Route path="/my-license" element={<UserRoute><MyLicensePage /></UserRoute>} />
+          <Route path="/my-profiles" element={<UserRoute><MyProfilesPage /></UserRoute>} />
 
           {/* ── Auth (guest-only, redirect if already logged in) ─────────── */}
           <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />

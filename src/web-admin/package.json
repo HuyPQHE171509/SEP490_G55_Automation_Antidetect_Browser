@@ -6,16 +6,7 @@
   "description": "Web Admin Dashboard — orchestrator for backend (Express) and frontend (React)",
   "scripts": {
     "install:all": "npm install && npm --prefix backend install && npm --prefix frontend install",
-    "dev": "concurrently -k -n \"API,WEB\" -c \"cyan,green\" \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
-    "dev:fresh": "npx kill-port 3001 5174 2>nul & concurrently -k -n \"API,WEB\" -c \"cyan,green\" \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
-    "dev:api": "npm --prefix backend run dev",
-    "dev:web": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",
-    "preview": "npm --prefix frontend run preview",
-    "lint": "npm --prefix frontend run lint",
     "start": "npm --prefix backend start"
-  },
-  "devDependencies": {
-    "concurrently": "^9.2.1"
   }
 }

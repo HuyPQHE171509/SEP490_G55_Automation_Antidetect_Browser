@@ -14,13 +14,24 @@ import EngineInstallModal from './components/EngineInstallModal';
 import LinkProxyModal from './components/LinkProxyModal';
 import LivePreviewPanel from './components/LivePreviewPanel';
 import MacroManager from './components/MacroManager';
+import AuthModal from './components/AuthModal';
 import './App.css';
 import { useI18n } from './i18n/index';
+import { db } from './services/firebase';
+import { collection, getDocs, doc, setDoc, deleteDoc, writeBatch, getCountFromServer } from 'firebase/firestore';
  
 function App() {
   const { t, lang, setLang } = useI18n();
   // Engine install modal: { profileId, engine, headless } | null
   const [engineInstallState, setEngineInstallState] = useState(null);
+  
+  const [currentUser, setCurrentUser] = useState(() => {
+    const token = localStorage.getItem('firebase_id_token');
+    const uid = localStorage.getItem('firebase_uid');
+    const email = localStorage.getItem('firebase_email');
+    return token && uid ? { token, uid, email } : null;
+  });
+
   const [activeNav, setActiveNav] = useState('profiles');
   const [profiles, setProfiles] = useState([]);
   const [selectedProfile, setSelectedProfile] = useState(null);
@@ -115,9 +126,11 @@ function App() {
     return cleanup;
   }, []);
 
+  const licenseKey = `hl-license-activated_${localStorage.getItem('firebase_email') || ''}`;
   const [showLicenseModal, setShowLicenseModal] = useState(() => {
     // Skip modal if user already activated OR chose free plan this session
-    return !localStorage.getItem('hl-license-activated') &&
+    const email = localStorage.getItem('firebase_email') || '';
+    return !localStorage.getItem(`hl-license-activated_${email}`) &&
            !sessionStorage.getItem('license-skipped');
   });
   const handleCloseLicense = () => {
@@ -143,45 +156,164 @@ function App() {
     }
   }, [theme]);
 
-  // Bridge helper: prefer IPC via preload; fallback to REST API when unavailable
+  // Bridge helper: Syncs between Firebase Firestore and Local IPC
   const api = useMemo(() => {
-    const base = 'http://127.0.0.1:4000';
     const hasIpc = !!(window.electronAPI && typeof window.electronAPI === 'object');
     return {
       async getProfiles() {
-        if (hasIpc && window.electronAPI.getProfiles) return await window.electronAPI.getProfiles();
-        const r = await fetch(base + '/api/profiles');
-        return await r.json();
+        if (!currentUser?.uid) {
+          // Fallback if offline/not logged in
+          if (hasIpc && window.electronAPI.getProfiles) return await window.electronAPI.getProfiles();
+          return [];
+        }
+        try {
+          // Fetch from Firestore
+          const querySnapshot = await getDocs(collection(db, `users/${currentUser.uid}/profiles`));
+          const firestoreProfiles = [];
+          querySnapshot.forEach((doc) => {
+            firestoreProfiles.push({ id: doc.id, ...doc.data() });
+          });
+          
+          if (hasIpc && window.electronAPI.syncLocalProfiles) {
+            // Check if this is the first time syncing (cloud empty but local has data)
+            const localProfiles = await window.electronAPI.getProfiles();
+            if (firestoreProfiles.length === 0 && localProfiles && localProfiles.length > 0) {
+              console.log("Migrating local profiles to cloud...");
+              const batch = writeBatch(db);
+              localProfiles.forEach(p => {
+                batch.set(doc(db, `users/${currentUser.uid}/profiles`, p.id), p);
+              });
+              await batch.commit();
+              return localProfiles; // Return local, they are now on the cloud
+            }
+            
+            // Otherwise, normal sync: overwrite local with cloud data
+            await window.electronAPI.syncLocalProfiles(firestoreProfiles);
+          }
+          return firestoreProfiles;
+        } catch (e) {
+          console.error("Firestore getProfiles error:", e);
+          // Fallback to local
+          if (hasIpc && window.electronAPI.getProfiles) return await window.electronAPI.getProfiles();
+          return [];
+        }
       },
       async saveProfile(profile) {
-        if (hasIpc && window.electronAPI.saveProfile) return await window.electronAPI.saveProfile(profile);
-        const isUpdate = !!profile?.id;
-        const url = base + '/api/profiles' + (isUpdate ? `/${profile.id}` : '');
-        const r = await fetch(url, { method: isUpdate ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(profile || {}) });
-        return await r.json();
+        if (!currentUser?.uid) return { success: false, error: 'Not logged in' };
+        try {
+          const profileId = profile.id || `prof-${Date.now()}`;
+          const profileData = { ...profile, id: profileId };
+          
+          // Save to Firestore
+          await setDoc(doc(db, `users/${currentUser.uid}/profiles`, profileId), profileData);
+          
+          // Save to Local Cache
+          if (hasIpc && window.electronAPI.saveProfile) {
+            await window.electronAPI.saveProfile(profileData);
+          }
+          return { success: true, profile: profileData };
+        } catch (e) {
+          console.error("Firestore saveProfile error:", e);
+          return { success: false, error: e.message };
+        }
       },
       async deleteProfile(profileId) {
-        if (hasIpc && window.electronAPI.deleteProfile) return await window.electronAPI.deleteProfile(profileId);
-        const r = await fetch(base + `/api/profiles/${profileId}`, { method: 'DELETE' });
-        return await r.json();
+        if (!currentUser?.uid) return { success: false, error: 'Not logged in' };
+        try {
+          // Delete from Firestore
+          await deleteDoc(doc(db, `users/${currentUser.uid}/profiles`, profileId));
+          
+          // Delete from Local Cache
+          if (hasIpc && window.electronAPI.deleteProfile) {
+            await window.electronAPI.deleteProfile(profileId);
+          }
+          return { success: true };
+        } catch (e) {
+          console.error("Firestore deleteProfile error:", e);
+          return { success: false, error: e.message };
+        }
       },
       async saveProfilesBulk(profilesList) {
-        if (hasIpc && window.electronAPI.saveProfilesBulk) return await window.electronAPI.saveProfilesBulk(profilesList);
-        const r = await fetch(base + '/api/profiles/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(profilesList) });
-        return await r.json();
+        if (!currentUser?.uid) return { success: false, error: 'Not logged in' };
+        try {
+          const batch = writeBatch(db);
+          const finalProfiles = [];
+          profilesList.forEach(p => {
+            const profileId = p.id || `prof-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            const profileData = { ...p, id: profileId };
+            finalProfiles.push(profileData);
+            batch.set(doc(db, `users/${currentUser.uid}/profiles`, profileId), profileData);
+          });
+          
+          await batch.commit();
+          
+          if (hasIpc && window.electronAPI.saveProfilesBulk) {
+            await window.electronAPI.saveProfilesBulk(finalProfiles);
+          }
+          return { success: true, profiles: finalProfiles };
+        } catch (e) {
+          console.error("Firestore saveProfilesBulk error:", e);
+          return { success: false, error: e.message };
+        }
       },
       async deleteProfilesBulk(ids) {
-        if (hasIpc && window.electronAPI.deleteProfilesBulk) return await window.electronAPI.deleteProfilesBulk(ids);
-        const r = await fetch(base + '/api/profiles/bulk', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
-        return await r.json();
+        if (!currentUser?.uid) return { success: false, error: 'Not logged in' };
+        try {
+          const batch = writeBatch(db);
+          ids.forEach(id => {
+            batch.delete(doc(db, `users/${currentUser.uid}/profiles`, id));
+          });
+          await batch.commit();
+          
+          if (hasIpc && window.electronAPI.deleteProfilesBulk) {
+            await window.electronAPI.deleteProfilesBulk(ids);
+          }
+          return { success: true, deleted: ids.length };
+        } catch (e) {
+          console.error("Firestore deleteProfilesBulk error:", e);
+          return { success: false, error: e.message };
+        }
       },
       async cloneProfilesBulk(ids, overrides) {
-        if (hasIpc && window.electronAPI.cloneProfilesBulk) return await window.electronAPI.cloneProfilesBulk(ids, overrides);
-        const r = await fetch(base + '/api/profiles/bulk-clone', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, overrides }) });
-        return await r.json();
+        if (!currentUser?.uid) return { success: false, error: 'Not logged in' };
+        try {
+          // First, get the current local profiles to clone from
+          let existingProfiles = [];
+          if (hasIpc && window.electronAPI.getProfiles) {
+            existingProfiles = await window.electronAPI.getProfiles();
+          } else {
+            const querySnapshot = await getDocs(collection(db, `users/${currentUser.uid}/profiles`));
+            querySnapshot.forEach((doc) => existingProfiles.push({ id: doc.id, ...doc.data() }));
+          }
+          
+          const profilesToClone = existingProfiles.filter(p => ids.includes(p.id));
+          const batch = writeBatch(db);
+          const finalProfiles = [];
+          
+          profilesToClone.forEach(p => {
+            const newId = `prof-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            const clonedProfile = JSON.parse(JSON.stringify(p));
+            clonedProfile.id = newId;
+            clonedProfile.name = `${clonedProfile.name} (Clone)`;
+            Object.assign(clonedProfile, overrides || {});
+            
+            finalProfiles.push(clonedProfile);
+            batch.set(doc(db, `users/${currentUser.uid}/profiles`, newId), clonedProfile);
+          });
+          
+          await batch.commit();
+          
+          if (hasIpc && window.electronAPI.saveProfilesBulk) {
+            await window.electronAPI.saveProfilesBulk(finalProfiles);
+          }
+          return { success: true, profiles: finalProfiles };
+        } catch (e) {
+          console.error("Firestore cloneProfilesBulk error:", e);
+          return { success: false, error: e.message };
+        }
       },
     };
-  }, []);
+  }, [currentUser?.uid]);
 
   // Wait for backend IPC to be ready, then load data
   useEffect(() => {
@@ -284,6 +416,17 @@ function App() {
     } catch (e) { console.warn('Failed to refresh running status', e); }
   };
 
+  // ── Helper: lấy số profile thực tế từ Firestore (tránh bypass bằng state cũ) ──
+  const getCloudProfileCount = async () => {
+    if (!currentUser?.uid) return (profiles || []).length;
+    try {
+      const snap = await getCountFromServer(collection(db, `users/${currentUser.uid}/profiles`));
+      return snap.data().count;
+    } catch {
+      return (profiles || []).length;
+    }
+  };
+
   const handleCreateProfile = () => {
     const base = 'Profile'; const existing = new Set((profiles || []).map(p => (p.name || '').trim()));
     let name = `${base} ${(profiles || []).length + 1}`; for (let i = 1; i <= (profiles || []).length + 100; i++) { const c = `${base} ${i}`; if (!existing.has(c)) { name = c; break; } }
@@ -336,7 +479,7 @@ function App() {
     const h = headless !== undefined ? headless : !!p?.settings?.headless;
     const eng = engine || p?.settings?.engine || 'playwright';
     try {
-      const options = { headless: h, engine: eng };
+      const options = { headless: h, engine: eng, token: currentUser?.token };
       const result = await window.electronAPI.launchProfile(profileId, options);
       if (!result.success) {
         setErrorProfiles(prev => ({ ...prev, [profileId]: true }));
@@ -348,7 +491,7 @@ function App() {
       addToast('Error launching profile: ' + e.message, 'error', 5000);
     }
   };
-  const handleStopProfile = async (profileId) => { try { const res = profileId === '__ALL__' ? await window.electronAPI.stopAllProfiles() : await window.electronAPI.stopProfile(profileId); if (!res.success) alert('Error stopping profile: ' + res.error); await refreshRunningStatus(); } catch (e) { alert('Error stopping profile: ' + e.message); } };
+  const handleStopProfile = async (profileId) => { try { const res = profileId === '__ALL__' ? await window.electronAPI.stopAllProfiles() : await window.electronAPI.stopProfile(profileId, { token: currentUser?.token }); if (!res.success) alert('Error stopping profile: ' + res.error); await refreshRunningStatus(); } catch (e) { alert('Error stopping profile: ' + e.message); } };
   const handleSetHeadless = async (profileId, value) => { if (runningWs[profileId]) return; setHeadlessPrefs(prev => ({ ...prev, [profileId]: !!value })); try { const p = profiles.find(x => x.id === profileId); if (p) { const updated = { ...p, settings: { ...(p.settings || {}), headless: !!value } }; const res = await window.electronAPI.saveProfile(updated); if (res?.success && res.profile) setProfiles(prev => prev.map(pp => pp.id === profileId ? res.profile : pp)); } } catch { } };
   const handleSetEngine = async (profileId, value) => { if (runningWs[profileId]) return; setEnginePrefs(prev => ({ ...prev, [profileId]: value })); try { const p = profiles.find(x => x.id === profileId); if (p) { const updated = { ...p, settings: { ...(p.settings || {}), engine: value } }; const res = await window.electronAPI.saveProfile(updated); if (res?.success && res.profile) setProfiles(prev => prev.map(pp => pp.id === profileId ? res.profile : pp)); } } catch { } };
   const handleToggleProfile = async (profileId) => {
@@ -376,12 +519,13 @@ function App() {
     try {
       // Check license limit cho free users
       const isNewProfile = !profile.id;
-      const isPaidUser = !!localStorage.getItem('hl-license-activated');
+      const email = localStorage.getItem('firebase_email') || '';
+      const isPaidUser = !!localStorage.getItem(`hl-license-activated_${email}`);
       
       if (isNewProfile && !isPaidUser) {
-        const currentProfileCount = (profiles || []).length;
-        if (currentProfileCount >= 5) {
-          alert('Free plan is limited to a maximum of 5 profiles.\n\nPlease upgrade your license to create more profiles.');
+        const cloudCount = await getCloudProfileCount();
+        if (cloudCount >= 5) {
+          alert(`Tài khoản Free chỉ được tạo tối đa 5 profile.\nBạn đang có ${cloudCount} profile trên cloud.\n\nVui lòng nâng cấp lên Pro để tạo thêm.`);
           return;
         }
       }
@@ -407,6 +551,15 @@ function App() {
   // Bulk operations
   const handleCreateBulk = async (count, namePrefix, engine = 'playwright') => {
     try {
+      const email = localStorage.getItem('firebase_email') || '';
+      const isPaidUser = !!localStorage.getItem(`hl-license-activated_${email}`);
+      const cloudCount = await getCloudProfileCount();
+      if (!isPaidUser && cloudCount + count > 5) {
+        const canCreate = Math.max(0, 5 - cloudCount);
+        alert(`Tài khoản Free chỉ được tạo tối đa 5 profile.\nBạn đang có ${cloudCount} profile trên cloud, chỉ còn có thể tạo thêm ${canCreate} profile.\n\nVui lòng nâng cấp lên Pro để tạo thêm.`);
+        return;
+      }
+
       // Find the highest existing number for this prefix to avoid duplicates
       const prefixLower = namePrefix.toLowerCase();
       let maxNum = 0;
@@ -478,6 +631,15 @@ function App() {
   const handleCloneBulk = async (ids) => {
     if (!ids?.length) return;
     try {
+      const email = localStorage.getItem('firebase_email') || '';
+      const isPaidUser = !!localStorage.getItem(`hl-license-activated_${email}`);
+      const cloudCount = await getCloudProfileCount();
+      if (!isPaidUser && cloudCount + ids.length > 5) {
+        const canClone = Math.max(0, 5 - cloudCount);
+        alert(`Tài khoản Free chỉ được tạo tối đa 5 profile.\nBạn đang có ${cloudCount} profile trên cloud, chỉ còn có thể clone thêm ${canClone} profile.\n\nVui lòng nâng cấp lên Pro để tạo thêm.`);
+        return;
+      }
+
       const res = await api.cloneProfilesBulk(ids, {});
       if (res.success) {
         if (res.errors && res.errors.length > 0) {
@@ -583,7 +745,7 @@ function App() {
     if (skipped > 0) addToast(`${skipped} profile(s) skipped — max ${maxConcurrent} concurrent browsers reached.`, 'warning', 5000);
     await refreshRunningStatus();
   };
-  const handleStopSelected = async () => { const ids = getSelectedList(); await Promise.all(ids.map(id => window.electronAPI.stopProfile(id))); await refreshRunningStatus(); };
+  const handleStopSelected = async () => { const ids = getSelectedList(); await Promise.all(ids.map(id => window.electronAPI.stopProfile(id, { token: currentUser?.token }))); await refreshRunningStatus(); };
   const handleDeleteSelected = async () => { const ids = getSelectedList(); if (!ids.length) return; await handleDeleteBulk(ids); };
   const handleCloneSelected = async () => { const ids = getSelectedList(); if (!ids.length) return; await handleCloneBulk(ids); };
 
@@ -637,6 +799,7 @@ function App() {
             onCopyWs={handleCopyWs}
             onStopProfile={handleStopProfile}
             onViewLogs={handleViewLogs}
+            onSaveProfile={handleSaveProfile}
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
             onSelectAll={selectAll}
@@ -704,6 +867,38 @@ function App() {
     }
   };
 
+  const handleLogout = async () => {
+    const confirmed = window.confirm(
+      'Bạn có chắc muốn đăng xuất không?\n\nLịch sử profile sẽ được lưu lại cho tài khoản của bạn trên cloud.'
+    );
+    if (!confirmed) return;
+
+    // Clear local profile cache so next user starts fresh
+    try {
+      if (window.electronAPI?.syncLocalProfiles) {
+        await window.electronAPI.syncLocalProfiles([]);
+      }
+    } catch (e) {
+      console.warn('Could not clear local profile cache:', e);
+    }
+
+    // Clear session & auth data
+    localStorage.removeItem('firebase_id_token');
+    localStorage.removeItem('firebase_uid');
+    localStorage.removeItem('firebase_email');
+    sessionStorage.removeItem('license-skipped');
+    setProfiles([]);
+    setCurrentUser(null);
+  };
+
+  if (!currentUser) {
+    return (
+      <div className="app">
+        <AuthModal onLoginSuccess={(user) => setCurrentUser(user)} />
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       {/* ── Update banner ──────────────────────────────────────────────── */}
@@ -758,6 +953,8 @@ function App() {
           onNavigate={(id) => { setShowForm(false); setSelectedProfile(null); setActiveNav(id); }}
           onCreateProfile={handleCreateProfile}
           apiStatus={apiStatus}
+          onLogout={handleLogout}
+          currentUser={currentUser}
         />
       )}
 
