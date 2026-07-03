@@ -35,9 +35,9 @@ const defaultSettings = {
   engine: 'playwright',
   injectFingerprint: true,
   quantity: 1,
-  startupPage: 'https://hlmck.vercel.app/',
-  windowWidth: 1440,
-  windowHeight: 900,
+  startupPage: 'https://www.google.com',
+  windowWidth: 0,
+  windowHeight: 0,
   advanced: {
     platform: 'Win32',
     locale: 'en-US',
@@ -198,7 +198,6 @@ const generateConsistentFingerprint = () => {
       gpuVendor: gpu.v, gpuRenderer: gpu.r,
       webrtc: randomFrom(['Public + private', 'Default', 'Disable non-proxied UDP', 'Public interface only']),
       mediaDevices: { speakers: randomInt(1, 3), microphones: randomInt(0, 2), webcams: randomInt(0, 1), audio: true, video: true },
-      windowWidth: screen.w, windowHeight: screen.h,
       advanced: {
         platform: plat, dnt: false, devicePixelRatio: pixelRatio,
         maxTouchPoints: 0, webglVendor: gpu.v, webglRenderer: gpu.r,
@@ -238,7 +237,7 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    startUrl: 'https://hlmck.vercel.app/',
+    startUrl: 'https://www.google.com',
     active: true,
     cookie: '',
     fingerprint: { ...defaultFingerprint },
@@ -690,17 +689,6 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
           <label className="pf-label">Startup Page</label>
           <input type="text" className="pf-input" value={formData.settings.startupPage || formData.startUrl || ''} onChange={e => { setS('startupPage', e.target.value); setFormData(p => ({ ...p, startUrl: e.target.value })); }} placeholder="ex: https://www.google.com/?hl=en" />
         </div>
-        <div className="pf-row">
-          <div className="pf-field">
-            <label className="pf-label">Window Width (px)</label>
-            <input type="number" className="pf-input" value={formData.settings.windowWidth || 1440} onChange={e => setS('windowWidth', Number(e.target.value))} />
-          </div>
-          <div className="pf-field">
-            <label className="pf-label">Window Height (px)</label>
-            <input type="number" className="pf-input" value={formData.settings.windowHeight || 900} onChange={e => setS('windowHeight', Number(e.target.value))} />
-          </div>
-        </div>
-        <p className="pf-hint">Leave width/height at 0 to use the OS default window size.</p>
       </fieldset>
 
       {/* Quick Generate */}
