@@ -1,10 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "<BACKEND_URL_CUA_BAN>/api/:path*"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

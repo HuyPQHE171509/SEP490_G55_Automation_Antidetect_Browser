@@ -77,10 +77,8 @@ const LoginPage = () => {
   const handleRedirect = (user) => {
     if (from && from !== '/login' && from !== '/register') {
       navigate(from, { replace: true });
-    } else if (user.role === 'admin') {
-      navigate('/dashboard', { replace: true });
     } else {
-      navigate('/my-profiles', { replace: true });
+      navigate('/', { replace: true });
     }
   };
 
