@@ -18,7 +18,7 @@ const { autoUpdater } = require('electron-updater');
 // Feed cập nhật: GitHub Releases (bền, không giới hạn dung lượng, hỗ trợ delta
 // qua HTTP Range). Có thể override bằng UPDATE_FEED_URL để trỏ feed generic khác.
 const UPDATE_FEED_URL = (process.env.UPDATE_FEED_URL || '').replace(/\/$/, '');
-const GH_OWNER = process.env.UPDATE_GH_OWNER || 'XuanKien1';
+const GH_OWNER = process.env.UPDATE_GH_OWNER || 'HuyPQHE171509';
 const GH_REPO = process.env.UPDATE_GH_REPO || 'hlmck-releases';
 
 // ── Cấu hình electron-updater ───────────────────────────────────────────────

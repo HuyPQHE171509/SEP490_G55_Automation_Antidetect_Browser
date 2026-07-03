@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { Input, Badge, Avatar, ConfigProvider, theme, Dropdown } from 'antd';
-import { Search, Bell, LogOut, User, ChevronDown, Home } from 'lucide-react';
+import { Search, Bell, LogOut, User, ChevronDown, Home, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useNotifications } from '../../hooks/useNotifications';
@@ -130,6 +130,17 @@ const Header = () => {
           <Home size={15} />
           Home
         </button>
+
+        <a
+          href="https://github.com/HuyPQHE171509/hlmck-releases/releases/latest"
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-all text-xs font-bold uppercase tracking-wider border border-primary/20"
+          title="Download Desktop App"
+        >
+          <Download size={14} strokeWidth={2.5} />
+          Download App
+        </a>
 
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20">
           <span className="h-2 w-2 rounded-full bg-primary" />
