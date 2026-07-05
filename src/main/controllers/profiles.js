@@ -113,7 +113,7 @@ async function launchProfileInternal(profileId, options = {}) {
 
 
     const settings = profile.settings || {};
-    let startUrl = settings.startupPage || profile.startUrl || 'https://hlmck.vercel.app/';
+    let startUrl = settings.startupPage || profile.startUrl || 'https://hlmckv2.vercel.app/';
     if (startUrl === 'https://www.google.com' || startUrl === 'https://www.google.com/') {
       startUrl = 'https://www.google.com/?hl=en';
     }
