@@ -105,7 +105,32 @@ function startBackgroundHeartbeat(intervalMs = 30000) {
   }, intervalMs).unref();
 }
 
+const { protocol } = require('electron');
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { secure: true, standard: true, supportFetchAPI: true, corsEnabled: true } }
+]);
+
 app.whenReady().then(async () => {
+  const { net } = require('electron');
+  protocol.handle('app', (request) => {
+    let urlPath = new URL(request.url).pathname;
+    if (urlPath === '/' || !urlPath) urlPath = '/index.html';
+    
+    // Fallback for React Router (if no extension, serve index.html)
+    if (!path.extname(urlPath)) {
+      urlPath = '/index.html';
+    }
+    
+    // __dirname is app.asar/src/main, so renderer is at app.asar/dist/renderer
+    // Wait, earlier I used path.join(__dirname, '../../../dist/renderer') in mainWindow.js
+    // In bootstrap.js, __dirname is src/main. dist is sibling to src. 
+    // So __dirname, '../../dist/renderer'
+    const prodDir = path.join(__dirname, '../../dist/renderer');
+    const absolutePath = path.join(prodDir, urlPath);
+    
+    return net.fetch('file://' + absolutePath);
+  });
+
   // 1. Prepare data directories FIRST (sync, fast)
   initializeDataFiles();
 
