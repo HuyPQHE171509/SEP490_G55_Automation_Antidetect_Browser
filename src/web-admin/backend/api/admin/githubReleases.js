@@ -17,7 +17,7 @@
  *   GITHUB_RELEASES_REPO    mặc định: hlmck-releases
  */
 
-const OWNER = process.env.GITHUB_RELEASES_OWNER || 'XuanKien1';
+const OWNER = process.env.GITHUB_RELEASES_OWNER || 'HuyPQHE171509';
 const REPO = process.env.GITHUB_RELEASES_REPO || 'hlmck-releases';
 const TOKEN = process.env.GITHUB_RELEASES_TOKEN || '';
 const API_BASE = `https://api.github.com/repos/${OWNER}/${REPO}`;
