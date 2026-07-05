@@ -74,10 +74,21 @@ export async function publishGithubRelease(req, res) {
   if (!id) return res.status(400).json({ error: 'Invalid release id' });
 
   try {
+    // 1. Fetch current release to see if it has a tag_name (GitHub requires tag_name to publish)
+    const getRes = await fetch(`${API_BASE}/releases/${id}`, { headers: ghHeaders() });
+    const currentRelease = await getRes.json().catch(() => ({}));
+    
+    const patchBody = { draft: false, prerelease: false, make_latest: 'true' };
+    if (!currentRelease.tag_name) {
+      // Auto-generate a tag if the user forgot to specify one when creating the draft
+      patchBody.tag_name = currentRelease.name ? currentRelease.name.replace(/\s+/g, '-') : `v${Date.now()}`;
+    }
+
+    // 2. Publish it
     const ghRes = await fetch(`${API_BASE}/releases/${id}`, {
       method: 'PATCH',
       headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ draft: false, prerelease: false, make_latest: 'true' }),
+      body: JSON.stringify(patchBody),
     });
     const body = await ghRes.json().catch(() => null);
     if (!ghRes.ok) {
