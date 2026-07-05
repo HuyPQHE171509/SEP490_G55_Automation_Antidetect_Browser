@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import EulaModal, { hasAgreedToEula } from '../../components/EulaModal';
 
 // Public GitHub Releases feed — always serves the newest signed installer.
-const WINDOWS_DOWNLOAD_URL = 'https://github.com/XuanKien1/hlmck-releases/releases/latest';
+const WINDOWS_DOWNLOAD_URL = 'https://github.com/HuyPQHE171509/hlmck-releases/releases/latest';
 
 // ─── Download info (fetched from public API, no auth needed) ─────────────
 function useDownloadInfo() {
