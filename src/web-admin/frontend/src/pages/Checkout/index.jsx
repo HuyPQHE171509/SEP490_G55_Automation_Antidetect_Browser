@@ -28,11 +28,12 @@ const TIER_INFO = {
 export default function CheckoutPage() {
   const [searchParams] = useSearchParams();
   const tier = searchParams.get('tier') || 'pro';
+  const urlEmail = searchParams.get('email') || '';
 
   const { user } = useAuthStore();
   const tierInfo = TIER_INFO[tier];
 
-  const [email, setEmail] = useState(user?.email || '');
+  const [email, setEmail] = useState(user?.email || urlEmail);
   const [loading, setLoading] = useState(false);
   const [priceLabel, setPriceLabel] = useState('...');
 
