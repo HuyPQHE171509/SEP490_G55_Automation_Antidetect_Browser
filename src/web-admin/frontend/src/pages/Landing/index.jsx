@@ -551,7 +551,7 @@ const LandingPage = () => {
             )}
             <a
               href="#download"
-              onClick={(e) => scrollTo(e, '#download')}
+              onClick={(e) => { e.preventDefault(); handleDownloadClick('/api/download/windows', 'Windows Installer'); }}
               className="px-4 py-2 rounded-lg bg-primary text-background-dark text-sm font-semibold
                 hover:bg-primary/90 transition-colors shadow-lg shadow-primary/25"
             >
@@ -612,7 +612,7 @@ const LandingPage = () => {
             )}
             <a
               href="#download"
-              onClick={(e) => scrollTo(e, '#download')}
+              onClick={(e) => { e.preventDefault(); handleDownloadClick('/api/download/windows', 'Windows Installer'); }}
               className="block w-full text-center px-4 py-2 rounded-lg bg-primary text-background-dark text-sm font-semibold mt-2"
             >
               Download Free
@@ -659,7 +659,7 @@ const LandingPage = () => {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <a
               href="#download"
-              onClick={(e) => scrollTo(e, '#download')}
+              onClick={(e) => { e.preventDefault(); handleDownloadClick('/api/download/windows', 'Windows Installer'); }}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-background-dark
                 font-bold text-sm hover:bg-primary/90 transition-all duration-200
                 shadow-xl shadow-primary/30 hover:shadow-primary/50 hover:-translate-y-0.5"
