@@ -2,7 +2,7 @@ const os = require('os');
 const crypto = require('crypto');
 
 // Web backend URL for license status sync (overridable at build time)
-const LICENSE_SERVER_URL = process.env.LICENSE_SERVER_URL || 'https://sep490-g55-automation-antidetect-browser.onrender.com';
+const LICENSE_SERVER_URL = process.env.LICENSE_SERVER_URL || 'https://sep490-g55-automation-antidetect-browser-m8br.onrender.com';
 
 function getMachineCode() {
   try {
