@@ -16,7 +16,7 @@ const DATA_DIR = join(__dirname, '../.data');
 const DOWNLOADS_FILE = join(DATA_DIR, 'downloads.json');
 const CONFIG_FILE = join(DATA_DIR, 'config.json');
 
-const GITHUB_BASE = 'https://github.com/XuanKien1/hlmck-releases/releases/latest/download';
+const GITHUB_BASE = 'https://github.com/HuyPQHE171509/hlmck-releases/releases/latest/download';
 
 function getDefaultUrls(version = '1.0.1') {
   const v = version.replace(/^v/, '');
