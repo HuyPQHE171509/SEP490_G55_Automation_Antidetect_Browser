@@ -185,4 +185,19 @@ async function syncLicenseStatus() {
   }
 }
 
-module.exports = { getMachineCode, deriveLicenseKey, validateLicenseKey, deactivateLicense, syncLicenseStatus };
+function getLicenseStatus() {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const { app } = require('electron');
+    const licensePath = path.join(app.getPath('userData'), 'license.json');
+    if (!fs.existsSync(licensePath)) return false;
+
+    const current = JSON.parse(fs.readFileSync(licensePath, 'utf8'));
+    return current.activated === true;
+  } catch {
+    return false;
+  }
+}
+
+module.exports = { getMachineCode, deriveLicenseKey, validateLicenseKey, deactivateLicense, syncLicenseStatus, getLicenseStatus };

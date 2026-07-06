@@ -141,6 +141,23 @@ function App() {
     setShowLicenseModal(false);
   };
 
+  useEffect(() => {
+    const syncLocalLicense = async () => {
+      try {
+        if (window.electronAPI?.getLicenseStatus) {
+          const isValid = await window.electronAPI.getLicenseStatus();
+          const email = localStorage.getItem('firebase_email') || '';
+          if (!isValid && email) {
+            localStorage.removeItem(`hl-license-activated_${email}`);
+          }
+        }
+      } catch (err) {
+        console.error('Sync license error:', err);
+      }
+    };
+    syncLocalLicense();
+  }, []);
+
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('app-theme') || 'Light';
   });
