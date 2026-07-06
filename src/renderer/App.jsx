@@ -942,9 +942,9 @@ function App() {
         }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>⬆️</span>
-            <strong>Update available: v{updateInfo.version}</strong>
+            <strong>Update available</strong>
             {updateInfo.notes && (
-              <span style={{ opacity: 0.75, fontSize: '12px' }}>— {updateInfo.notes.slice(0, 80)}{updateInfo.notes.length > 80 ? '…' : ''}</span>
+              <span style={{ opacity: 0.75, fontSize: '12px' }}>— {updateInfo.notes.replace(/<[^>]*>?/gm, '').slice(0, 80)}{updateInfo.notes.replace(/<[^>]*>?/gm, '').length > 80 ? '…' : ''}</span>
             )}
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
