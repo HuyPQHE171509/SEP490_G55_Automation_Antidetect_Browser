@@ -23,7 +23,7 @@ const EXCLUDE_DIRS = ['node_modules', 'vendor'];
 // fn.toString() and injected into the browser. Obfuscating them with stringArray encoding
 // breaks them because the decoder function (_0x1234) is defined at module scope but the
 // browser only receives the inner function body — causing ReferenceError on first page load.
-const EXCLUDE_FILES = ['fingerprintInit.js', 'behaviorSimulator.js', 'actions.js'];
+const EXCLUDE_FILES = ['fingerprintInit.js', 'behaviorSimulator.js', 'actions.js', 'handlers.js'];
 
 function shouldProcess(filePath) {
   if (!filePath.endsWith('.js')) return false;
