@@ -35,24 +35,41 @@ function getConfig() {
   } catch { return {}; }
 }
 
-function loadDownloads() {
+import { getDb } from './lib/storage.js';
+
+async function loadDownloads() {
+  const db = await getDb();
+  if (db) {
+    try {
+      const doc = await db.collection('stats').doc('downloads').get();
+      if (doc.exists) return doc.data();
+    } catch {}
+  }
   try {
     if (!existsSync(DOWNLOADS_FILE)) return {};
     return JSON.parse(readFileSync(DOWNLOADS_FILE, 'utf8'));
   } catch { return {}; }
 }
 
-function saveDownloads(data) {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-  writeFileSync(DOWNLOADS_FILE, JSON.stringify(data, null, 2), 'utf8');
+async function saveDownloads(data) {
+  const db = await getDb();
+  if (db) {
+    try {
+      await db.collection('stats').doc('downloads').set(data);
+    } catch {}
+  }
+  try {
+    if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+    writeFileSync(DOWNLOADS_FILE, JSON.stringify(data, null, 2), 'utf8');
+  } catch {}
 }
 
-export function downloadRedirect(req, res) {
+export async function downloadRedirect(req, res) {
   const platform = req.params.platform?.toLowerCase();
 
   if (platform === 'stats') {
     // Return download stats
-    const counts = loadDownloads();
+    const counts = await loadDownloads();
     const total = Object.values(counts).reduce((s, c) => s + (c.count || 0), 0);
     return res.status(200).json({ total, platforms: counts });
   }
@@ -69,7 +86,7 @@ export function downloadRedirect(req, res) {
 
   // Track download
   try {
-    const counts = loadDownloads();
+    const counts = await loadDownloads();
     if (!counts[platform]) counts[platform] = { count: 0, lastAt: null };
     counts[platform].count += 1;
     counts[platform].lastAt = new Date().toISOString();
@@ -77,7 +94,7 @@ export function downloadRedirect(req, res) {
     const today = new Date().toISOString().slice(0, 10);
     if (!counts[platform].daily) counts[platform].daily = {};
     counts[platform].daily[today] = (counts[platform].daily[today] || 0) + 1;
-    saveDownloads(counts);
+    await saveDownloads(counts);
   } catch (e) {
     console.error('[download] tracking error:', e.message);
   }
@@ -86,8 +103,8 @@ export function downloadRedirect(req, res) {
   return res.redirect(302, url);
 }
 
-export function downloadStats(req, res) {
-  const counts = loadDownloads();
+export async function downloadStats(req, res) {
+  const counts = await loadDownloads();
   const total = Object.values(counts).reduce((s, c) => s + (c.count || 0), 0);
   return res.status(200).json({ total, platforms: counts });
 }

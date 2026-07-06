@@ -10,7 +10,20 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DOWNLOADS_FILE = join(__dirname, '../../.data/downloads.json');
 
-function getDownloadStats() {
+import { getDb } from '../lib/storage.js';
+
+async function getDownloadStats() {
+  const db = await getDb();
+  if (db) {
+    try {
+      const doc = await db.collection('stats').doc('downloads').get();
+      if (doc.exists) {
+        const data = doc.data();
+        const total = Object.values(data).reduce((s, c) => s + (c.count || 0), 0);
+        return { total, platforms: data };
+      }
+    } catch {}
+  }
   try {
     if (!existsSync(DOWNLOADS_FILE)) return { total: 0, platforms: {} };
     const data = JSON.parse(readFileSync(DOWNLOADS_FILE, 'utf8'));
@@ -46,7 +59,7 @@ export default async function handler(req, res) {
       return { label, count };
     });
 
-    const downloads = getDownloadStats();
+    const downloads = await getDownloadStats();
 
     return res.status(200).json({
       totalRevenue,

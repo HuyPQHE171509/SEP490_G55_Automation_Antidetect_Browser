@@ -32,10 +32,9 @@ function saveFile(data) {
 // ── Firestore (lazy init) ─────────────────────────────────────────────────────
 let _db = null;
 
-async function getDb() {
-  // Only use Firestore if explicitly opted in via USE_FIRESTORE=true
-  // FIREBASE_SERVICE_ACCOUNT alone only enables Firebase Auth (users list)
-  if (!process.env.FIREBASE_SERVICE_ACCOUNT || process.env.USE_FIRESTORE !== 'true') return null;
+export async function getDb() {
+  // Always use Firestore if FIREBASE_SERVICE_ACCOUNT is available to prevent data loss on Vercel
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT) return null;
   if (_db) return _db;
 
   const { initializeApp, getApps, cert } = await import('firebase-admin/app');
