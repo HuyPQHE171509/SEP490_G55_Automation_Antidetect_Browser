@@ -83,10 +83,6 @@ async function validateLicenseKey(inputKey, email) {
     const expected = deriveLicenseKey(machineCode, email);
     const isValid = inputKey.trim().toUpperCase() === expected;
 
-    if (!isValid) {
-      return { valid: false, error: `Debug: expected ${expected} for email ${email} but got ${inputKey}` };
-    }
-
     if (isValid) {
       // Check server: reject if revoked; re-bind if machine was deactivated
       const meta = await fetchLicenseMeta(machineCode, inputKey.trim().toUpperCase());
