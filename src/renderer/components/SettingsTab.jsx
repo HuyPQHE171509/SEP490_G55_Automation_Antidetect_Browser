@@ -63,7 +63,7 @@ export default function SettingsTab({
                 localStorage.setItem(userLicenseKey, key);
                 setLicenseStatus(true);
             } else {
-                setLicenseError(t('license.error.invalid', 'Invalid license key for this machine.'));
+                setLicenseError(result?.error || t('license.error.invalid', 'Invalid license key for this machine.'));
             }
         } catch {
             setLicenseError(t('license.error.system', 'An error occurred. Please try again later.'));
