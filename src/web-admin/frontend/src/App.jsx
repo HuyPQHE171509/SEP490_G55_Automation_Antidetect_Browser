@@ -50,6 +50,14 @@ function App() {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (user?.role === 'admin') {
+      document.title = 'Web Admin - HL-MCK Antidetect Browser';
+    } else {
+      document.title = 'HL-MCK Antidetect Browser';
+    }
+  }, [user?.role]);
+
   // Block authenticated non-admin users when maintenance is on
   // (unauthenticated users still reach /login so admin can sign in)
   if (!loading && maintenance.maintenanceMode && isAuthenticated && user?.role !== 'admin') {
