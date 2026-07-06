@@ -185,7 +185,7 @@ async function syncLicenseStatus() {
   }
 }
 
-function getLicenseStatus() {
+function getLicenseStatus(email) {
   try {
     const fs = require('fs');
     const path = require('path');
@@ -194,7 +194,8 @@ function getLicenseStatus() {
     if (!fs.existsSync(licensePath)) return false;
 
     const current = JSON.parse(fs.readFileSync(licensePath, 'utf8'));
-    return current.activated === true;
+    if (!email) return current.activated === true;
+    return current.activated === true && current.email === email.trim().toLowerCase();
   } catch {
     return false;
   }

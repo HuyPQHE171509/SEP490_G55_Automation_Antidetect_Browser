@@ -96,7 +96,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMachineCode: () => ipcRenderer.invoke('get-machine-code'),
   validateLicense: (key, email) => ipcRenderer.invoke('validate-license', key, email),
   deactivateLicense: () => ipcRenderer.invoke('deactivate-license'),
-  getLicenseStatus: () => ipcRenderer.invoke('get-license-status'),
+  getLicenseStatus: (email) => ipcRenderer.invoke('get-license-status', email),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
   // Scripts

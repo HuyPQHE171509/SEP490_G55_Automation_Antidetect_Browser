@@ -145,9 +145,10 @@ function App() {
     const syncLocalLicense = async () => {
       try {
         if (window.electronAPI?.getLicenseStatus) {
-          const isValid = await window.electronAPI.getLicenseStatus();
           const email = localStorage.getItem('firebase_email') || '';
-          if (!isValid && email) {
+          if (!email) return;
+          const isValid = await window.electronAPI.getLicenseStatus(email);
+          if (!isValid) {
             localStorage.removeItem(`hl-license-activated_${email}`);
           }
         }

@@ -287,7 +287,7 @@ function registerIpcHandlers(extra = {}) {
   handle('get-machine-code', () => getMachineCode());
   handle('validate-license', (_e, key, email) => validateLicenseKey(key, email));
   handle('deactivate-license', () => deactivateLicense());
-  handle('get-license-status', () => getLicenseStatus());
+  handle('get-license-status', (_e, email) => getLicenseStatus(email));
 
   // Quản lý Môi trường chạy Trình duyệt (Browser Runtime Manager)
   handle('browser-runtime-status', async (_e, name) => checkBrowserStatus(name));
