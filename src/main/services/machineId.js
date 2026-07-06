@@ -86,7 +86,7 @@ async function validateLicenseKey(inputKey, email) {
     if (isValid) {
       // Check server: reject if revoked; re-bind if machine was deactivated
       const meta = await fetchLicenseMeta(machineCode, inputKey.trim().toUpperCase());
-      if (meta && meta.status === 'revoked') {
+      if (meta && meta.status === 'revoked' && process.env.NODE_ENV !== 'development') {
         return { valid: false, error: 'Your license has been revoked by the administrator.' };
       }
       if (!meta || meta.status === 'not_found') {
@@ -161,11 +161,12 @@ async function syncLicenseStatus() {
     const licensePath = path.join(app.getPath('userData'), 'license.json');
     if (!fs.existsSync(licensePath)) return;
 
+    const current = JSON.parse(fs.readFileSync(licensePath, 'utf8'));
     const machineCode = getMachineCode();
     const meta = await fetchLicenseMeta(machineCode, current.key);
     if (!meta) return; // offline — keep existing state
 
-    if (meta.status === 'revoked') {
+    if (meta.status === 'revoked' && process.env.NODE_ENV !== 'development') {
       fs.unlinkSync(licensePath);
       console.log('[license] License revoked by admin — cleared local license.json');
       return;
