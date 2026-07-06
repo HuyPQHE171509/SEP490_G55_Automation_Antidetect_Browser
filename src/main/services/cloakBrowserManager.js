@@ -145,7 +145,7 @@ async function install() {
     await new Promise((resolve, reject) => {
       const child = spawn(cmd, ["cloakbrowser", "install"], {
         env: { ...process.env, CLOAKBROWSER_CACHE_DIR: dir },
-        cwd: path.resolve(__dirname, "../../.."), // root project
+        cwd: dir, // MUST be a real directory, not inside app.asar
         shell: process.env.ComSpec || "C:\\Windows\\System32\\cmd.exe", // required on Windows to execute .cmd files via cmd.exe
       });
 
