@@ -380,41 +380,47 @@ export default function ProfileEditDrawer({ visible, profile, onClose, userId, o
   };
 
   const generateCanvas = () => {
-    setNestedST('canvas', 'noiseSeed', randomInt(100000000, 2100000000));
-    setNestedST('canvas', 'noiseIntensity', randomFrom([1, 2, 3, 4, 5]));
+    setFP('canvasNoise', randomInt(100000000, 2100000000));
+    setFP('canvasNoiseIntensity', randomFrom([1, 2, 3, 4, 5]));
     antMessage.success('Canvas generated!');
   };
 
   const generateWebGL = () => {
-    setNestedST('webgl', 'noiseSeed', randomInt(100000000, 2100000000));
-    setNestedST('webgl', 'maxTextureSize', randomFrom([4096, 8192, 16384]));
+    setFP('webglNoise', randomInt(100000000, 2100000000));
+    setFP('maxTextureSize', randomFrom([4096, 8192, 16384]));
+    setFP('webglExtensions', randomFrom([
+        'EXT_texture_compression_bptc, ANGLE_instanced_arrays, OES_texture_float',
+        'ANGLE_instanced_arrays, OES_texture_float, WEBGL_depth_texture, OES_vertex_array_object',
+        'EXT_texture_filter_anisotropic, WEBGL_compressed_texture_s3tc, OES_element_index_uint'
+    ]));
     antMessage.success('WebGL generated!');
   };
 
   const generateAudio = () => {
-    setNestedST('audio', 'noiseSeed', randomInt(100000000, 2100000000));
-    setNestedST('audio', 'sampleRate', randomFrom([44100, 48000, 96000]));
-    setNestedST('audio', 'channels', randomFrom(['Mono', 'Stereo', 'Surround']));
+    setFP('audioNoise', randomInt(100000000, 2100000000));
+    setFP('audioSampleRate', randomFrom([44100, 48000, 96000]));
+    setFP('audioChannels', randomFrom(['Mono', 'Stereo', 'Surround']));
     antMessage.success('Audio generated!');
   };
 
   const generateMedia = () => {
-    setNestedST('media', 'speakers', randomInt(1, 3));
-    setNestedST('media', 'microphones', randomInt(1, 2));
-    setNestedST('media', 'webcams', randomInt(0, 1));
+    setNestedST('mediaDevices', 'speakers', randomInt(1, 3));
+    setNestedST('mediaDevices', 'microphones', randomInt(1, 2));
+    setNestedST('mediaDevices', 'webcams', randomInt(0, 1));
     antMessage.success('Media generated!');
   };
 
   const generateNetwork = () => {
-    setNestedST('network', 'connectionType', randomFrom(['Ethernet', 'Wi-Fi', 'Cellular']));
-    setNestedST('network', 'pdfViewer', randomFrom(['Enabled', 'Disabled']));
+    setFP('connectionType', randomFrom(['Ethernet', 'Wi-Fi', 'Cellular']));
+    setFP('pdfViewer', randomFrom(['Enabled', 'Disabled']));
+    setST('webrtc', randomFrom(['Public + private', 'Default', 'Disable non-proxied UDP', 'Public interface only']));
     antMessage.success('Network generated!');
   };
 
   const generateBattery = () => {
-    setNestedST('battery', 'charging', randomFrom(['Yes', 'No']));
-    setNestedST('battery', 'level', Number((Math.random() * 0.9 + 0.1).toFixed(2)));
-    setNestedST('battery', 'dischargingTime', randomInt(5000, 20000));
+    setFP('batteryCharging', randomFrom(['Yes', 'No']));
+    setFP('batteryLevel', Number((Math.random() * 0.9 + 0.1).toFixed(2)));
+    setFP('batteryDischargingTime', randomInt(5000, 20000));
     antMessage.success('Battery generated!');
   };
 
@@ -727,12 +733,12 @@ export default function ProfileEditDrawer({ visible, profile, onClose, userId, o
           <button style={S.generateBtn} onClick={generateCanvas}>⚡ Generate</button>
         </div>
         <FG label="Canvas Noise Seed">
-          <NativeInput type="number" value={st.canvas?.noiseSeed} onChange={v => setNestedST('canvas', 'noiseSeed', v)} placeholder="Random seed" />
+          <NativeInput type="number" value={fp.canvasNoise} onChange={v => setFP('canvasNoise', v)} placeholder="Random seed" />
         </FG>
         <FG label="Noise Intensity">
           <NativeSelect
-            value={st.canvas?.noiseIntensity}
-            onChange={v => setNestedST('canvas', 'noiseIntensity', Number(v))}
+            value={fp.canvasNoiseIntensity}
+            onChange={v => setFP('canvasNoiseIntensity', Number(v))}
             options={[1, 2, 3, 4, 5].map(n => ({ value: n, label: `Level ${n}` }))}
           />
         </FG>
@@ -748,12 +754,12 @@ export default function ProfileEditDrawer({ visible, profile, onClose, userId, o
           <button style={S.generateBtn} onClick={generateWebGL}>⚡ Generate</button>
         </div>
         <FG label="WebGL Noise Seed">
-          <NativeInput type="number" value={st.webgl?.noiseSeed} onChange={v => setNestedST('webgl', 'noiseSeed', v)} placeholder="Random seed" />
+          <NativeInput type="number" value={fp.webglNoise} onChange={v => setFP('webglNoise', v)} placeholder="Random seed" />
         </FG>
         <FG label="Max Texture Size">
           <NativeSelect
-            value={st.webgl?.maxTextureSize}
-            onChange={v => setNestedST('webgl', 'maxTextureSize', Number(v))}
+            value={fp.maxTextureSize}
+            onChange={v => setFP('maxTextureSize', Number(v))}
             options={[
               { value: 4096, label: '4096' },
               { value: 8192, label: '8192' },
@@ -762,7 +768,7 @@ export default function ProfileEditDrawer({ visible, profile, onClose, userId, o
           />
         </FG>
         <FG label="Extensions (comma-separated)">
-          <NativeTextArea value={st.webgl?.extensions} onChange={v => setNestedST('webgl', 'extensions', v)} placeholder="EXT_texture_filter_anisotropic, ..." rows={3} />
+          <NativeTextArea value={fp.webglExtensions} onChange={v => setFP('webglExtensions', v)} placeholder="EXT_texture_filter_anisotropic, ..." rows={3} />
         </FG>
       </div>
     </div>
@@ -776,13 +782,13 @@ export default function ProfileEditDrawer({ visible, profile, onClose, userId, o
           <button style={S.generateBtn} onClick={generateAudio}>⚡ Generate</button>
         </div>
         <FG label="Audio Noise Seed">
-          <NativeInput type="number" value={st.audio?.noiseSeed} onChange={v => setNestedST('audio', 'noiseSeed', v)} placeholder="Random seed" />
+          <NativeInput type="number" value={fp.audioNoise} onChange={v => setFP('audioNoise', v)} placeholder="Random seed" />
         </FG>
         <FormRow>
           <FG label="Sample Rate">
             <NativeSelect
-              value={st.audio?.sampleRate}
-              onChange={v => setNestedST('audio', 'sampleRate', Number(v))}
+              value={fp.audioSampleRate}
+              onChange={v => setFP('audioSampleRate', Number(v))}
               options={[
                 { value: 44100, label: '44100 Hz' },
                 { value: 48000, label: '48000 Hz' },
@@ -792,8 +798,8 @@ export default function ProfileEditDrawer({ visible, profile, onClose, userId, o
           </FG>
           <FG label="Channels">
             <NativeSelect
-              value={st.audio?.channels}
-              onChange={v => setNestedST('audio', 'channels', v)}
+              value={fp.audioChannels}
+              onChange={v => setFP('audioChannels', v)}
               options={['Mono', 'Stereo', 'Surround']}
             />
           </FG>
@@ -811,14 +817,14 @@ export default function ProfileEditDrawer({ visible, profile, onClose, userId, o
         </div>
         <FormRow>
           <FG label="Speakers">
-            <NativeInput type="number" value={st.media?.speakers} onChange={v => setNestedST('media', 'speakers', Math.min(5, Math.max(0, v)))} placeholder="2" />
+            <NativeInput type="number" value={st.mediaDevices?.speakers ?? 2} onChange={v => setNestedST('mediaDevices', 'speakers', Math.min(5, Math.max(0, v)))} placeholder="2" />
           </FG>
           <FG label="Microphones">
-            <NativeInput type="number" value={st.media?.microphones} onChange={v => setNestedST('media', 'microphones', Math.min(5, Math.max(0, v)))} placeholder="1" />
+            <NativeInput type="number" value={st.mediaDevices?.microphones ?? 1} onChange={v => setNestedST('mediaDevices', 'microphones', Math.min(5, Math.max(0, v)))} placeholder="1" />
           </FG>
         </FormRow>
         <FG label="Webcams">
-          <NativeInput type="number" value={st.media?.webcams} onChange={v => setNestedST('media', 'webcams', Math.min(3, Math.max(0, v)))} placeholder="0" />
+          <NativeInput type="number" value={st.mediaDevices?.webcams ?? 0} onChange={v => setNestedST('mediaDevices', 'webcams', Math.min(3, Math.max(0, v)))} placeholder="0" />
         </FG>
       </div>
     </div>
@@ -833,22 +839,22 @@ export default function ProfileEditDrawer({ visible, profile, onClose, userId, o
         </div>
         <FG label="WebRTC Policy">
           <NativeSelect
-            value={st.network?.webrtcPolicy || 'default'}
-            onChange={v => setNestedST('network', 'webrtcPolicy', v)}
+            value={st.webrtc || 'Default'}
+            onChange={v => setST('webrtc', v)}
             options={[
-              { value: 'default', label: 'Default' },
-              { value: 'public_and_private', label: 'Public + Private' },
-              { value: 'disable_non_proxied_udp', label: 'Disable non-proxied UDP' },
-              { value: 'public_interface_only', label: 'Public interface only' },
+              { value: 'Default', label: 'Default' },
+              { value: 'Public + private', label: 'Public + Private' },
+              { value: 'Disable non-proxied UDP', label: 'Disable non-proxied UDP' },
+              { value: 'Public interface only', label: 'Public interface only' },
             ]}
           />
         </FG>
         <FG label="Do Not Track">
           <NativeSelect
-            value={st.network?.doNotTrack || 'unspecified'}
-            onChange={v => setNestedST('network', 'doNotTrack', v)}
+            value={String(st.advanced?.dnt !== undefined ? st.advanced.dnt : 'null')}
+            onChange={v => setNestedST('advanced', 'dnt', v === 'null' ? null : (v === '1' ? 1 : 0))}
             options={[
-              { value: 'unspecified', label: 'Unspecified' },
+              { value: 'null', label: 'Unspecified' },
               { value: '1', label: 'Enable (1)' },
               { value: '0', label: 'Disable (0)' },
             ]}
@@ -857,15 +863,15 @@ export default function ProfileEditDrawer({ visible, profile, onClose, userId, o
         <FormRow>
           <FG label="Connection Type">
             <NativeSelect
-              value={st.network?.connectionType || 'Ethernet'}
-              onChange={v => setNestedST('network', 'connectionType', v)}
+              value={fp.connectionType || 'Ethernet'}
+              onChange={v => setFP('connectionType', v)}
               options={['Ethernet', 'Wi-Fi', 'Cellular', '4g', 'none']}
             />
           </FG>
           <FG label="PDF Viewer">
             <NativeSelect
-              value={st.network?.pdfViewer || 'Enabled'}
-              onChange={v => setNestedST('network', 'pdfViewer', v)}
+              value={fp.pdfViewer || 'Enabled'}
+              onChange={v => setFP('pdfViewer', v)}
               options={['Enabled', 'Disabled']}
             />
           </FG>
@@ -875,7 +881,7 @@ export default function ProfileEditDrawer({ visible, profile, onClose, userId, o
   );
 
   const renderBattery = () => {
-    const battLevel = st.battery?.level ?? 0.8;
+    const battLevel = fp.batteryLevel !== undefined ? fp.batteryLevel : 0.8;
     return (
       <div>
         <div style={S.section}>
@@ -885,8 +891,8 @@ export default function ProfileEditDrawer({ visible, profile, onClose, userId, o
           </div>
           <FG label="Charging">
             <NativeSelect
-              value={st.battery?.charging || 'No'}
-              onChange={v => setNestedST('battery', 'charging', v)}
+              value={fp.batteryCharging || 'No'}
+              onChange={v => setFP('batteryCharging', v)}
               options={['Yes', 'No']}
             />
           </FG>
@@ -895,7 +901,7 @@ export default function ProfileEditDrawer({ visible, profile, onClose, userId, o
               <input
                 type="range" min={0} max={100} step={1}
                 value={Math.round(battLevel * 100)}
-                onChange={e => setNestedST('battery', 'level', Number(e.target.value) / 100)}
+                onChange={e => setFP('batteryLevel', Number(e.target.value) / 100)}
                 style={{ flex: 1, accentColor: '#06b6d4' }}
               />
               <span style={{ color: '#22d3ee', minWidth: '40px', textAlign: 'right', fontWeight: 700 }}>
