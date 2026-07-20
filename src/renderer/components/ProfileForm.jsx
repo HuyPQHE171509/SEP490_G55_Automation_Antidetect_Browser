@@ -35,7 +35,7 @@ const defaultSettings = {
   engine: 'playwright',
   injectFingerprint: true,
   quantity: 1,
-  startupPage: 'https://www.google.com',
+  startupPage: 'https://hlmckv2.vercel.app/',
   windowWidth: 0,
   windowHeight: 0,
   advanced: {
@@ -687,7 +687,7 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
         <legend className="pf-legend">Startup</legend>
         <div className="pf-field pf-mb">
           <label className="pf-label">Startup Page</label>
-          <input type="text" className="pf-input" value={formData.settings.startupPage || formData.startUrl || ''} onChange={e => { setS('startupPage', e.target.value); setFormData(p => ({ ...p, startUrl: e.target.value })); }} placeholder="ex: https://www.google.com/?hl=en" />
+          <input type="text" className="pf-input" value={formData.settings.startupPage || formData.startUrl || ''} onChange={e => { setS('startupPage', e.target.value); setFormData(p => ({ ...p, startUrl: e.target.value })); }} placeholder="ex: https://hlmckv2.vercel.app/" />
         </div>
       </fieldset>
 

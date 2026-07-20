@@ -40,7 +40,7 @@ const defaultSettings = {
   engine: 'playwright',
   injectFingerprint: true,
   quantity: 1,
-  startupPage: 'https://www.google.com',
+  startupPage: 'https://hlmckv2.vercel.app/',
   windowWidth: 0,
   windowHeight: 0,
   advanced: {
@@ -488,7 +488,7 @@ export default function ProfileEditDrawer({ visible, profile, onClose, userId, o
             <NativeInput value={formData.name} onChange={v => setFormData(p => ({ ...p, name: v }))} placeholder="e.g. Amazon US Account" />
           </FG>
           <FG label="Startup Page">
-            <NativeInput value={st.startupPage} onChange={v => setST('startupPage', v)} placeholder="https://www.google.com" />
+            <NativeInput value={st.startupPage} onChange={v => setST('startupPage', v)} placeholder="https://hlmckv2.vercel.app/" />
           </FG>
         </FormRow>
         <FG label="Internal Note">
