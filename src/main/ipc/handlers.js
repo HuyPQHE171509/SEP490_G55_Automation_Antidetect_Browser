@@ -823,6 +823,18 @@ function registerIpcHandlers(extra = {}) {
     catch (e) { return { success: false, error: e?.message || String(e) }; }
   });
 
+  // Mở thư mục Downloads của hệ thống trong File Explorer
+  handle('open-downloads-folder', async () => {
+    try {
+      const { app } = require('electron');
+      const downloadsPath = app.getPath('downloads');
+      await shell.openPath(downloadsPath);
+      return { success: true, path: downloadsPath };
+    } catch (e) {
+      return { success: false, error: e?.message || String(e) };
+    }
+  });
+
   // ── Element Picker: điều khiển browser từ UI picker panel ───────────────────
 
   // Lấy URL trang hiện tại của profile đang chạy

@@ -98,6 +98,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deactivateLicense: () => ipcRenderer.invoke('deactivate-license'),
   getLicenseStatus: (email) => ipcRenderer.invoke('get-license-status', email),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  openDownloadsFolder: () => ipcRenderer.invoke('open-downloads-folder'),
 
   // Scripts
   listScripts: () => ipcRenderer.invoke('scripts-list'),

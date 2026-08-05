@@ -1,4 +1,6 @@
 const fs = require('fs');
+const path = require('path');
+const { app, shell } = require('electron');
 const { appendLog } = require('../logging/logger');
 const { storageStatePath, getDataRoot } = require('../storage/paths');
 const { loadSettings, resolveChromeExecutable, resolveVendorChromePath } = require('../storage/settings');
@@ -356,6 +358,10 @@ async function launchProfileInternal(profileId, options = {}) {
       'network.cookie.cookieBehavior': 0,     // Cho phép tất cả cookie (không chặn third-party)
       'browser.aboutConfig.showWarning': false, // Tắt cảnh báo khi mở about:config
       'general.warnOnAboutConfig': false,
+      'browser.download.folderList': 2,       // 2 = dùng thư mục tùy chỉnh
+      'browser.download.dir': downloadsFolder, // Đường dẫn thư mục Downloads
+      'browser.download.useDownloadDir': true,
+      'browser.download.panel.shown': true,
     } : undefined;
 
     // Bước 6: Gọi Playwright để khởi động trình duyệt
@@ -433,10 +439,16 @@ async function launchProfileInternal(profileId, options = {}) {
     const applyTz = !safeMode && apply.timezone !== false && identitySectionEnabled;
     const applyViewport = apply.viewport !== false && displaySectionEnabled;
     const applyGeo = !safeMode && apply.geolocation !== false;
+    const downloadsFolder = app.getPath('downloads');
     // contextOptions: tập hợp tất cả tùy chọn sẽ truyền vào browser.newContext() —
     // đây là nơi Playwright áp dụng giả mạo ở cấp độ browser context (UA, locale, timezone,
     // viewport, proxy, geolocation, storageState, extraHTTPHeaders).
-    const contextOptions = { proxy, extraHTTPHeaders: {} };
+    const contextOptions = {
+      proxy,
+      extraHTTPHeaders: {},
+      downloadsPath: downloadsFolder,
+      acceptDownloads: true,
+    };
 
     // Force UA to match the actual binary version — prevents binary/UA mismatch detection.
     // If detectedChromeVersion is available, rebuild the UA with the real version number.
@@ -528,6 +540,18 @@ async function launchProfileInternal(profileId, options = {}) {
     // Đây là bước quan trọng nhất: từ đây trở đi mọi tab/page trong context này sẽ
     // dùng UA giả, timezone giả, locale giả, cookie đã lưu, v.v.
     const context = await browser.newContext(contextOptions);
+
+    // Tự động lưu file/ảnh được tải từ trình duyệt vào trực tiếp thư mục Downloads của hệ thống với tên file chuẩn
+    context.on('download', async (download) => {
+      try {
+        const filename = download.suggestedFilename();
+        const savePath = path.join(downloadsFolder, filename);
+        await download.saveAs(savePath);
+        appendLog(profileId, `[Download] Saved file to Downloads: ${filename}`);
+      } catch (dlErr) {
+        appendLog(profileId, `[Download] Save error: ${dlErr?.message || dlErr}`);
+      }
+    });
     // Cấp quyền cho context (micro/camera/geolocation) — nếu không cấp, trình duyệt
     // sẽ hỏi người dùng popup, hoặc tự từ chối nếu ở headless mode.
     if (permissions.length) { await context.grantPermissions(permissions); }
@@ -699,10 +723,21 @@ async function launchProfileInternal(profileId, options = {}) {
         }
       } catch { cleanupPlaywright('Page close check failed — browser stopped'); }
     };
+    const setupPageDownloads = async (p) => {
+      if (!isFirefox) {
+        try {
+          const client = await p.context().newCDPSession(p);
+          await client.send('Page.setDownloadBehavior', {
+            behavior: 'allow',
+            downloadPath: downloadsFolder,
+          });
+        } catch {}
+      }
+    };
     // Gắn tracker và listener vào các tab hiện có và tất cả tab mới được tạo sau này
-    try { for (const p of context.pages()) { trackPageUrls(p); p.on('close', onPageClose); } } catch { }
+    try { for (const p of context.pages()) { trackPageUrls(p); p.on('close', onPageClose); setupPageDownloads(p); } } catch { }
     // context.on('page'): kích hoạt khi người dùng mở tab mới (Ctrl+T hoặc popup)
-    context.on('page', (newPage) => { try { trackPageUrls(newPage); newPage.on('close', onPageClose); } catch { } });
+    context.on('page', (newPage) => { try { trackPageUrls(newPage); newPage.on('close', onPageClose); setupPageDownloads(newPage); } catch { } });
     // Bước 8: Lưu thông tin phiên đang chạy vào runningProfiles Map —
     // Map này là nguồn dữ liệu thực đơn nhất (single source of truth) cho mọi handler
     // cần truy cập browser/context của một profile đang hoạt động.
