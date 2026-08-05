@@ -209,9 +209,12 @@ async function launchProfileInternal(profileId, options = {}) {
       args.push('--start-maximized');
     }
     // Giới hạn WebRTC để tránh rò rỉ địa chỉ IP thật khi dùng proxy.
-    // 'proxy_only' / 'disable_udp': buộc Chrome chỉ dùng IP của proxy, không dùng IP máy thật.
-    if (settings.webrtc === 'proxy_only' || settings.webrtc === 'disable_udp') {
-      if (!isFirefox) args.push('--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--enforce-webrtc-ip-permission-check');
+    // Tự động bật 'disable_non_proxied_udp' khi profile có gắn Proxy hoặc người dùng chọn cờ bảo mật WebRTC
+    const webrtcStr = String(settings.webrtc || '').toLowerCase();
+    const hasProxyConfig = !!(settings.proxy && settings.proxy.server && (settings.proxy.type || 'http') !== 'none');
+    const isWebrtcProtected = hasProxyConfig || webrtcStr.includes('proxy') || webrtcStr.includes('udp') || webrtcStr.includes('disable') || settings.webrtc === 'proxy_only' || settings.webrtc === 'disable_udp';
+    if (isWebrtcProtected && webrtcStr !== 'real') {
+      if (!isFirefox) args.push('--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--webrtc-ip-handling-policy=disable_non_proxied_udp', '--enforce-webrtc-ip-permission-check');
     }
     // Tắt WebGL nếu người dùng chọn không dùng — tránh website đọc thông tin GPU thật.
     if (settings.webgl === false || fp.webgl === false) { if (!isFirefox) args.push('--disable-3d-apis'); }
@@ -540,6 +543,122 @@ async function launchProfileInternal(profileId, options = {}) {
     // Đây là bước quan trọng nhất: từ đây trở đi mọi tab/page trong context này sẽ
     // dùng UA giả, timezone giả, locale giả, cookie đã lưu, v.v.
     const context = await browser.newContext(contextOptions);
+
+    // WebRTC Anti-Leak Interceptor: Đảm bảo IP WebRTC trùng khớp hoàn toàn với IP Proxy (không rò rỉ IP thật Việt Nam)
+    if (isWebrtcProtected && webrtcStr !== 'real') {
+      let targetProxyIp = settings.proxy?.ip || settings.proxy?.host || '';
+      if (!targetProxyIp && settings.proxy?.server) {
+        const rawServer = String(settings.proxy.server).replace(/^(https?|socks\d?):\/\//i, '').split('/')[0].split(':')[0].trim();
+        if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(rawServer)) {
+          targetProxyIp = rawServer;
+        } else if (rawServer && rawServer !== 'localhost' && rawServer !== '127.0.0.1') {
+          try {
+            const dns = require('dns');
+            const addresses = await dns.promises.resolve4(rawServer);
+            if (addresses && addresses[0]) targetProxyIp = addresses[0];
+          } catch {}
+        }
+      }
+      try {
+        await context.addInitScript(({ proxyIp }) => {
+          try {
+            const origRTCPeerConnection = window.RTCPeerConnection || window.webkitRTCPeerConnection;
+            if (!origRTCPeerConnection) return;
+
+            const sanitizeStr = (str) => {
+              if (!str || typeof str !== 'string') return str;
+              let res = str.replace(/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}|fd00:[0-9a-fA-F:]+|fe80:[0-9a-fA-F:]+)/g, proxyIp || '0.0.0.0');
+              if (proxyIp) {
+                res = res.replace(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/g, (match) => {
+                  if (match === '127.0.0.1' || match === '0.0.0.0') return match;
+                  return proxyIp;
+                });
+              }
+              return res;
+            };
+
+            const ProxyRTCPeerConnection = function (config, constraints) {
+              const pc = new origRTCPeerConnection(config, constraints);
+              let userHandler = null;
+
+              Object.defineProperty(pc, 'onicecandidate', {
+                get: () => userHandler,
+                set: (fn) => {
+                  userHandler = fn;
+                  pc._wrappedIceHandler = (evt) => {
+                    if (!evt || !evt.candidate || !evt.candidate.candidate) {
+                      if (userHandler) userHandler(evt);
+                      return;
+                    }
+                    const origCand = evt.candidate.candidate;
+                    if (/192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])|fd00:|fe80:/.test(origCand) && !proxyIp) return;
+                    const sanitized = sanitizeStr(origCand);
+                    try {
+                      const newCand = new RTCIceCandidate({
+                        candidate: sanitized,
+                        sdpMid: evt.candidate.sdpMid,
+                        sdpMLineIndex: evt.candidate.sdpMLineIndex,
+                        usernameFragment: evt.candidate.usernameFragment
+                      });
+                      const fakeEvt = new Event('icecandidate');
+                      Object.defineProperty(fakeEvt, 'candidate', { get: () => newCand });
+                      if (userHandler) userHandler(fakeEvt);
+                    } catch (e) {
+                      if (userHandler) userHandler(evt);
+                    }
+                  };
+                },
+                configurable: true,
+                enumerable: true
+              });
+
+              const origCreateOffer = pc.createOffer;
+              pc.createOffer = function (opts) {
+                return origCreateOffer.call(this, opts).then((offer) => {
+                  if (offer && offer.sdp) offer.sdp = sanitizeStr(offer.sdp);
+                  return offer;
+                });
+              };
+
+              const origCreateAnswer = pc.createAnswer;
+              pc.createAnswer = function (opts) {
+                return origCreateAnswer.call(this, opts).then((answer) => {
+                  if (answer && answer.sdp) answer.sdp = sanitizeStr(answer.sdp);
+                  return answer;
+                });
+              };
+
+              const origSetLocalDescription = pc.setLocalDescription;
+              pc.setLocalDescription = function (desc) {
+                const res = origSetLocalDescription.call(this, desc);
+                if (proxyIp) {
+                  setTimeout(() => {
+                    try {
+                      const candStr = `candidate:100100 1 udp 2122237183 ${proxyIp} 54321 typ srflx raddr 0.0.0.0 rport 0`;
+                      const fakeCand = new RTCIceCandidate({
+                        candidate: candStr,
+                        sdpMid: '0',
+                        sdpMLineIndex: 0
+                      });
+                      const fakeEvt = new Event('icecandidate');
+                      Object.defineProperty(fakeEvt, 'candidate', { get: () => fakeCand });
+                      if (userHandler) userHandler.call(pc, fakeEvt);
+                    } catch (e) {}
+                  }, 50);
+                }
+                return res;
+              };
+
+              return pc;
+            };
+
+            ProxyRTCPeerConnection.prototype = origRTCPeerConnection.prototype;
+            window.RTCPeerConnection = ProxyRTCPeerConnection;
+            if (window.webkitRTCPeerConnection) window.webkitRTCPeerConnection = ProxyRTCPeerConnection;
+          } catch (e) {}
+        }, { proxyIp: targetProxyIp });
+      } catch (e) {}
+    }
 
     // Tự động lưu file/ảnh được tải từ trình duyệt vào trực tiếp thư mục Downloads của hệ thống với tên file chuẩn
     context.on('download', async (download) => {
