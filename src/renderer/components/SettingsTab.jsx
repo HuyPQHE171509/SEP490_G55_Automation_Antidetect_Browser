@@ -104,24 +104,6 @@ export default function SettingsTab({
                     </div>
                 </div>
 
-                {/* Downloads Directory */}
-                <div className="card relative p-4 mb-6 mt-4">
-                    <div className="absolute -top-3 left-4 bg-[var(--card)] px-2 text-[0.85rem] font-bold text-[var(--fg)]">Downloads Folder</div>
-                    <div className="pt-1 flex flex-col gap-2">
-                        <p className="text-[0.75rem] text-[var(--muted)]">
-                            Ảnh và các tệp tin được tải xuống từ trình duyệt sẽ mặc định nằm trong thư mục Downloads của hệ thống.
-                        </p>
-                        <div>
-                            <button
-                                onClick={() => window.electronAPI.openDownloadsFolder?.()}
-                                className="btn btn-secondary px-3 py-1.5 text-[0.75rem] flex items-center gap-2"
-                            >
-                                📁 Mở thư mục Downloads (Open Downloads Folder)
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
                 {/* License */}
                 <div className="card relative p-4 mb-6 mt-4">
                     <div className="absolute -top-3 left-4 bg-[var(--card)] px-2 text-[0.85rem] font-bold text-[var(--fg)]">License</div>
