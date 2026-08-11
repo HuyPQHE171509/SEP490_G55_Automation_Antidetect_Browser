@@ -376,7 +376,25 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
         password: proxy.password || '',
       });
       if (res) {
-        setProxyCheckResult({ alive: res.alive, latency: res.latency, ip: res.ip, city: res.city, countryCode: res.countryCode, timezone: res.timezone });
+        setProxyCheckResult({ alive: res.alive, latency: res.latency, ip: res.ip, city: res.city, countryCode: res.countryCode, timezone: res.timezone, lat: res.lat, lon: res.lon });
+        if (res.alive) {
+          setFormData(prev => ({
+            ...prev,
+            fingerprint: {
+              ...prev.fingerprint,
+              timezone: res.timezone || prev.fingerprint.timezone,
+            },
+            settings: {
+              ...prev.settings,
+              timezone: res.timezone || prev.settings.timezone,
+              geolocation: (res.lat != null && res.lon != null) ? {
+                latitude: res.lat,
+                longitude: res.lon,
+                accuracy: 10,
+              } : prev.settings.geolocation,
+            }
+          }));
+        }
       } else {
         setProxyCheckResult({ alive: false, error: 'Check failed' });
       }

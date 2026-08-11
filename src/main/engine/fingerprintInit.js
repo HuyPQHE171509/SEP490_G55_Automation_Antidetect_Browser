@@ -1345,9 +1345,6 @@ async function applyFingerprintInitScripts(context, profile, settings, { overrid
           }
         } catch {}
       }, { seed: profileSeed });
-    } catch {}
-  }
-
   // Blocks 13-16 (keyboard, iframe, performance.now, fonts) REMOVED.
   // They override native DOM/API prototypes (Element.prototype.appendChild,
   // performance.now, CanvasRenderingContext2D.measureText, document.fonts.check)
