@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Offcanvas } from 'react-bootstrap';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, Crown, Sparkles, ArrowUpRight } from 'lucide-react';
 import { useI18n } from '../i18n/index';
 
 export default function DashboardSidebar({
@@ -13,6 +13,24 @@ export default function DashboardSidebar({
 }) {
     const [mobileOpen, setMobileOpen] = useState(false);
 
+    const [isPro, setIsPro] = useState(() => {
+        const email = currentUser?.email || localStorage.getItem('firebase_email') || '';
+        return !!(email && localStorage.getItem(`hl-license-activated_${email}`));
+    });
+
+    useEffect(() => {
+        const checkLicense = () => {
+            const email = currentUser?.email || localStorage.getItem('firebase_email') || '';
+            setIsPro(!!(email && localStorage.getItem(`hl-license-activated_${email}`)));
+        };
+        checkLicense();
+        window.addEventListener('storage', checkLicense);
+        window.addEventListener('license-status-changed', checkLicense);
+        return () => {
+            window.removeEventListener('storage', checkLicense);
+            window.removeEventListener('license-status-changed', checkLicense);
+        };
+    }, [currentUser?.email]);
 
     const NAVIGATION_ITEMS = [
         {
@@ -53,17 +71,69 @@ export default function DashboardSidebar({
 
             {/* Welcome User Card */}
             {currentUser?.email && (
-                <div className="mx-2 mb-4 p-2.5 bg-[var(--border)]/10 rounded-xl border border-[var(--border)]/40 flex items-center gap-3 shadow-sm">
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#00bcd4]/20 to-[#00bcd4]/5 border border-[#00bcd4]/30 text-[#00bcd4] flex items-center justify-center text-[15px] font-bold shrink-0 uppercase shadow-sm">
-                        {currentUser.email.charAt(0)}
+                isPro ? (
+                    /* 👑 PRO User Card */
+                    <div className="mx-2 mb-4 p-2.5 rounded-xl border border-amber-500/35 bg-gradient-to-br from-amber-500/[0.08] via-[var(--border)]/10 to-indigo-500/[0.05] flex items-center gap-3 shadow-sm relative overflow-hidden group">
+                        {/* Shimmer Accent */}
+                        <div className="absolute -top-4 -right-4 w-12 h-12 bg-amber-400/10 rounded-full blur-lg pointer-events-none" />
+
+                        {/* Avatar with PRO Crown */}
+                        <div className="relative shrink-0">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-400/25 via-[#00bcd4]/20 to-indigo-500/20 border border-amber-400/60 text-amber-300 flex items-center justify-center text-[15px] font-extrabold uppercase shadow-sm">
+                                {currentUser.email.charAt(0)}
+                            </div>
+                            <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 text-black flex items-center justify-center shadow-md border border-amber-200" title="PRO Member">
+                                <Crown size={9} className="stroke-[3]" />
+                            </div>
+                        </div>
+
+                        {/* User info & PRO Badge */}
+                        <div className="flex flex-col flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1 mb-0.5">
+                                <span className="text-[9px] text-[var(--muted)] font-bold uppercase tracking-wider">
+                                    Welcome back
+                                </span>
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-[1px] text-[8.5px] font-black uppercase tracking-wider rounded bg-gradient-to-r from-amber-400 to-amber-500 text-black shadow-sm shrink-0">
+                                    PRO
+                                </span>
+                            </div>
+                            <span className="text-[13px] font-bold text-[var(--fg)] truncate block leading-tight" title={currentUser.email.split('@')[0]}>
+                                {currentUser.email.split('@')[0]}
+                            </span>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                                <span className="text-[10px] text-emerald-400 font-medium truncate">PRO Account • Active</span>
+                            </div>
+                        </div>
                     </div>
-                    <div className="flex flex-col flex-1 min-w-0">
-                        <span className="text-[10px] text-[var(--muted)] font-bold uppercase tracking-wider mb-0.5">Welcome back</span>
-                        <span className="text-[13px] font-semibold text-[var(--fg)] truncate block" title={currentUser.email.split('@')[0]}>
-                            {currentUser.email.split('@')[0]}
-                        </span>
+                ) : (
+                    /* ⚪ Free User Card */
+                    <div className="mx-2 mb-4 p-2.5 bg-[var(--border)]/10 rounded-xl border border-[var(--border)]/40 flex items-center gap-3 shadow-sm">
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#00bcd4]/20 to-[#00bcd4]/5 border border-[#00bcd4]/30 text-[#00bcd4] flex items-center justify-center text-[15px] font-bold shrink-0 uppercase shadow-sm">
+                            {currentUser.email.charAt(0)}
+                        </div>
+                        <div className="flex flex-col flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1 mb-0.5">
+                                <span className="text-[9px] text-[var(--muted)] font-bold uppercase tracking-wider">Welcome back</span>
+                                <span className="text-[8.5px] font-bold uppercase tracking-wider px-1.5 py-[0.5px] rounded bg-[var(--border)]/40 text-[var(--muted)] border border-[var(--border)]/60">
+                                    FREE
+                                </span>
+                            </div>
+                            <span className="text-[13px] font-semibold text-[var(--fg)] truncate block" title={currentUser.email.split('@')[0]}>
+                                {currentUser.email.split('@')[0]}
+                            </span>
+                            <div className="flex items-center justify-between mt-0.5">
+                                <span className="text-[10px] text-[var(--muted)]">Free Plan (5 profiles)</span>
+                                <button
+                                    onClick={() => { onNavigate('settings'); closeMobile && closeMobile(); }}
+                                    className="text-[9.5px] font-semibold text-[var(--primary)] hover:underline flex items-center gap-0.5"
+                                >
+                                    Get PRO <ArrowUpRight size={10} />
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                </div>
+                )
             )}
 
             {/* Navigation */}

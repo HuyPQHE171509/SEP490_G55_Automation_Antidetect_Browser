@@ -22,6 +22,7 @@ export default function LicenseModal({ onClose, onActivated }) {
             const result = await window.electronAPI.validateLicense(key, userEmail);
             if (result?.valid) {
                 localStorage.setItem(userLicenseKey, key);
+                window.dispatchEvent(new Event('license-status-changed'));
                 onActivated?.(result);
             } else {
                 setError(t('license.error.invalid', 'Invalid license key for this machine.'));

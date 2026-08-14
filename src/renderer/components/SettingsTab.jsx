@@ -61,6 +61,7 @@ export default function SettingsTab({
             const result = await window.electronAPI.validateLicense(key, userEmail);
             if (result?.valid) {
                 localStorage.setItem(userLicenseKey, key);
+                window.dispatchEvent(new Event('license-status-changed'));
                 setLicenseStatus(true);
             } else {
                 setLicenseError(result?.error || t('license.error.invalid', 'Invalid license key for this machine.'));
@@ -77,6 +78,7 @@ export default function SettingsTab({
             await window.electronAPI.deactivateLicense();
         }
         localStorage.removeItem(userLicenseKey);
+        window.dispatchEvent(new Event('license-status-changed'));
         setLicenseStatus(false);
         setLicenseKey('');
         setConfirmDeactivate(false);
