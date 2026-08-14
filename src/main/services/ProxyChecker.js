@@ -15,26 +15,72 @@ const TIMEOUT_MS = 8000;
 
 // IP detection endpoints (free, no key needed)
 const IP_APIS = [
-  { url: 'http://ip-api.com/json/?fields=query,country,countryCode,city,timezone,status', parse: parseIpApi },
-  { url: 'https://ipinfo.io/json', parse: parseIpInfo },
+  { url: 'http://ip-api.com/json/?fields=query,country,countryCode,city,timezone,lat,lon,status', parse: parseIpApi },
   { url: 'https://ipwhois.app/json/', parse: parseIpWhois },
+  { url: 'https://ipinfo.io/json', parse: parseIpInfo },
+  { url: 'https://freeipapi.com/api/json', parse: parseFreeIpApi },
 ];
 
 function parseIpApi(body) {
   const d = JSON.parse(body);
   if (d.status === 'fail') return null;
-  return { ip: d.query, country: d.country, countryCode: d.countryCode, city: d.city, timezone: d.timezone };
+  return {
+    ip: d.query,
+    country: d.country,
+    countryCode: d.countryCode,
+    city: d.city,
+    timezone: d.timezone,
+    lat: typeof d.lat === 'number' ? d.lat : (d.lat ? parseFloat(d.lat) : null),
+    lon: typeof d.lon === 'number' ? d.lon : (d.lon ? parseFloat(d.lon) : null),
+  };
 }
 
 function parseIpInfo(body) {
   const d = JSON.parse(body);
-  return { ip: d.ip, country: d.country, countryCode: d.country, city: d.city, timezone: d.timezone };
+  let lat = null, lon = null;
+  if (d.loc && typeof d.loc === 'string') {
+    const parts = d.loc.split(',');
+    if (parts.length === 2) {
+      lat = parseFloat(parts[0]);
+      lon = parseFloat(parts[1]);
+    }
+  }
+  return {
+    ip: d.ip,
+    country: d.country,
+    countryCode: d.country,
+    city: d.city,
+    timezone: d.timezone,
+    lat: Number.isFinite(lat) ? lat : null,
+    lon: Number.isFinite(lon) ? lon : null,
+  };
 }
 
 function parseIpWhois(body) {
   const d = JSON.parse(body);
   if (!d.success) return null;
-  return { ip: d.ip, country: d.country, countryCode: d.country_code, city: d.city, timezone: d.timezone };
+  return {
+    ip: d.ip,
+    country: d.country,
+    countryCode: d.country_code,
+    city: d.city,
+    timezone: d.timezone,
+    lat: typeof d.latitude === 'number' ? d.latitude : (d.latitude ? parseFloat(d.latitude) : null),
+    lon: typeof d.longitude === 'number' ? d.longitude : (d.longitude ? parseFloat(d.longitude) : null),
+  };
+}
+
+function parseFreeIpApi(body) {
+  const d = JSON.parse(body);
+  return {
+    ip: d.ipAddress,
+    country: d.countryName,
+    countryCode: d.countryCode,
+    city: d.cityName,
+    timezone: d.timeZone,
+    lat: typeof d.latitude === 'number' ? d.latitude : (d.latitude ? parseFloat(d.latitude) : null),
+    lon: typeof d.longitude === 'number' ? d.longitude : (d.longitude ? parseFloat(d.longitude) : null),
+  };
 }
 
 /**
@@ -106,14 +152,59 @@ async function httpGetViaSocks(targetUrl, cfg, timeoutMs) {
   }
 }
 
+function normalizeProxyConfig(cfg) {
+  if (!cfg) return null;
+  let { type = 'http', host, port, username = '', password = '', server } = cfg;
+  if ((!host || !port) && server) {
+    let clean = String(server).trim();
+    if (clean.includes('://')) {
+      try {
+        const parsed = new URL(clean);
+        type = parsed.protocol.replace(':', '') || type;
+        host = parsed.hostname;
+        port = parsed.port ? parseInt(parsed.port, 10) : 80;
+        if (parsed.username) username = decodeURIComponent(parsed.username);
+        if (parsed.password) password = decodeURIComponent(parsed.password);
+      } catch {
+        clean = clean.replace(/^[a-zA-Z0-9]+:\/\//, '');
+      }
+    }
+    if (!host && clean) {
+      if (clean.includes('@')) {
+        const [authPart, hostPart] = clean.split('@');
+        const [u, p] = authPart.split(':');
+        username = u || username;
+        password = p || password;
+        const [h, pt] = hostPart.split(':');
+        host = h;
+        port = parseInt(pt, 10) || 80;
+      } else {
+        const parts = clean.split(':');
+        if (parts.length === 4) {
+          host = parts[0];
+          port = parseInt(parts[1], 10) || 80;
+          username = parts[2];
+          password = parts[3];
+        } else if (parts.length === 2) {
+          host = parts[0];
+          port = parseInt(parts[1], 10) || 80;
+        }
+      }
+    }
+  }
+  if (!host || !port) return null;
+  return { type: (type || 'http').toLowerCase(), host, port: Number(port), username, password };
+}
+
 /**
  * Check a proxy by sending a request to an IP detection API through it.
  * 
- * @param {Object} cfg - { type, host, port, username, password }
- * @returns {Object} - { success, alive, ip, country, countryCode, city, timezone, latency, error }
+ * @param {Object} rawCfg - { type, host, port, username, password } or { server, type, ... }
+ * @returns {Object} - { success, alive, ip, country, countryCode, city, timezone, lat, lon, latency, error }
  */
-async function checkProxy(cfg) {
-  if (!cfg || !cfg.host || !cfg.port) {
+async function checkProxy(rawCfg) {
+  const cfg = normalizeProxyConfig(rawCfg);
+  if (!cfg) {
     return { success: false, alive: false, error: 'Host and port are required' };
   }
 

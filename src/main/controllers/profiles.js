@@ -233,8 +233,8 @@ async function launchProfileInternal(profileId, options = {}) {
       const apply = (settings && settings.applyOverrides) || {};
       const applyGeo = apply.geolocation !== false;
       const g = settings?.geolocation || {};
-      const wantGeo = Number.isFinite(Number(g.latitude)) && Number.isFinite(Number(g.longitude));
-      if (applyGeo && wantGeo) permissions.push('geolocation');
+      const wantGeo = Number.isFinite(Number(g.latitude)) && Number.isFinite(Number(g.longitude)) && (Number(g.latitude) !== 0 || Number(g.longitude) !== 0);
+      if (applyGeo && (wantGeo || hasProxyConfig)) permissions.push('geolocation');
     } catch { }
     // Bước 4: Xử lý proxy — nếu proxy có xác thực (username/password) hoặc là SOCKS,
     // khởi động proxy forwarder nội bộ để Playwright kết nối qua localhost thay vì trực tiếp.
@@ -483,6 +483,40 @@ async function launchProfileInternal(profileId, options = {}) {
         contextOptions.extraHTTPHeaders['Accept-Language'] = `${spoofLang},${langBase};q=0.9,en;q=0.8`;
       }
     }
+    // Tự động đồng bộ Timezone & Geolocation tương ứng với Proxy nếu chưa có hoặc khi proxy thay đổi
+    if (hasProxyConfig && (applyTz || applyGeo)) {
+      const g = settings.geolocation || {};
+      const hasSavedGeo = Number.isFinite(Number(g.latitude)) && Number.isFinite(Number(g.longitude)) && (Number(g.latitude) !== 0 || Number(g.longitude) !== 0);
+      const hasSavedTz = !!(settings.timezone && settings.timezone !== 'UTC');
+
+      // Nếu chưa có tọa độ hoặc chưa có timezone, tra cứu nhanh từ proxy để khớp với vị trí quốc gia của proxy
+      if (!hasSavedGeo || !hasSavedTz || settings.autoSyncProxy === true) {
+        try {
+          const { checkProxy } = require('../services/ProxyChecker');
+          const proxyInfo = await checkProxy(settings.proxy);
+          if (proxyInfo && proxyInfo.alive) {
+            if (applyTz && proxyInfo.timezone) {
+              fp.timezone = proxyInfo.timezone;
+              settings.timezone = proxyInfo.timezone;
+            }
+            if (applyGeo && proxyInfo.lat != null && proxyInfo.lon != null) {
+              if (!settings.geolocation) settings.geolocation = {};
+              settings.geolocation.latitude = Number(proxyInfo.lat);
+              settings.geolocation.longitude = Number(proxyInfo.lon);
+              settings.geolocation.accuracy = 20;
+            }
+            if (proxyInfo.ip) {
+              if (!settings.proxy) settings.proxy = {};
+              settings.proxy.ip = proxyInfo.ip;
+            }
+            appendLog(profileId, `[Proxy Sync] Location: ${proxyInfo.country || ''} (${proxyInfo.city || ''}) [tz: ${proxyInfo.timezone || ''}, lat: ${proxyInfo.lat}, lon: ${proxyInfo.lon}]`);
+          }
+        } catch (e) {
+          appendLog(profileId, `[Proxy Sync] Lookup skipped: ${e?.message || e}`);
+        }
+      }
+    }
+
     // Thiết lập múi giờ giả — JavaScript Date và Intl API sẽ dùng timezone này.
     if (applyTz) contextOptions.timezoneId = fp.timezone || settings.timezone || 'UTC';
     // Do NOT set contextOptions.userAgent — Playwright calls Emulation.setUserAgentOverride
@@ -507,11 +541,15 @@ async function launchProfileInternal(profileId, options = {}) {
     // Thiết lập vị trí địa lý giả — Playwright inject vào browser context.
     // accuracy (độ chính xác tính bằng mét): thấp = GPS tốt, cao = định vị kém chính xác.
     if (applyGeo && settings.geolocation && settings.geolocation.latitude != null && settings.geolocation.longitude != null) {
-      contextOptions.geolocation = {
-        latitude: Number(settings.geolocation.latitude),
-        longitude: Number(settings.geolocation.longitude),
-        accuracy: Number(settings.geolocation.accuracy || 50),
-      };
+      const lat = Number(settings.geolocation.latitude);
+      const lon = Number(settings.geolocation.longitude);
+      if (Number.isFinite(lat) && Number.isFinite(lon) && (lat !== 0 || lon !== 0)) {
+        contextOptions.geolocation = {
+          latitude: lat,
+          longitude: lon,
+          accuracy: Number(settings.geolocation.accuracy || 20),
+        };
+      }
     }
     // storageState: đường dẫn tới file JSON chứa cookie, localStorage, sessionStorage của profile.
     // Playwright tự động nạp state này vào context để tiếp tục phiên đăng nhập từ lần trước —

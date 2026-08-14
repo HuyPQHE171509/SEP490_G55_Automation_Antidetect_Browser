@@ -375,8 +375,52 @@ function ProfileForm({ profile, onSave, onCancel, initialTab = 'general' }) {
         username: proxy.username || '',
         password: proxy.password || '',
       });
-      if (res) {
-        setProxyCheckResult({ alive: res.alive, latency: res.latency, ip: res.ip, city: res.city, countryCode: res.countryCode, timezone: res.timezone });
+      if (res && res.alive) {
+        setProxyCheckResult({
+          alive: res.alive,
+          latency: res.latency,
+          ip: res.ip,
+          city: res.city,
+          countryCode: res.countryCode,
+          country: res.country,
+          timezone: res.timezone,
+          lat: res.lat,
+          lon: res.lon,
+        });
+
+        // Tự động đồng bộ Timezone và Geolocation khớp 100% với quốc gia của Proxy
+        setFormData(prev => {
+          const next = { ...prev };
+          if (res.timezone) {
+            next.settings = { ...next.settings, timezone: res.timezone };
+            next.fingerprint = { ...next.fingerprint, timezone: res.timezone };
+          }
+          if (res.lat != null && res.lon != null) {
+            next.settings = {
+              ...next.settings,
+              geolocation: {
+                ...(next.settings.geolocation || {}),
+                latitude: Number(res.lat),
+                longitude: Number(res.lon),
+                accuracy: 20,
+                enabled: true,
+                permission: 'allow',
+              },
+            };
+          }
+          if (res.ip) {
+            next.settings = {
+              ...next.settings,
+              proxy: {
+                ...next.settings.proxy,
+                ip: res.ip,
+              },
+            };
+          }
+          return next;
+        });
+      } else if (res) {
+        setProxyCheckResult({ alive: false, error: res.error || 'Proxy is unreachable' });
       } else {
         setProxyCheckResult({ alive: false, error: 'Check failed' });
       }

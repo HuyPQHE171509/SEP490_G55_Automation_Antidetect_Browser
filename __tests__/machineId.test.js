@@ -24,6 +24,11 @@ describe('License & Login Validation (Desktop App)', () => {
   it('3. Should validate correct License Key (Login Success)', async () => {
     // Tắt log đỏ của console.error khi không có môi trường Electron thật
     jest.spyOn(console, 'error').mockImplementation(() => {});
+    const origFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'active' }),
+    });
     
     const code = getMachineCode();
     const expectedKey = deriveLicenseKey(code);
@@ -33,6 +38,7 @@ describe('License & Login Validation (Desktop App)', () => {
     
     expect(result.valid).toBe(true);
     
+    global.fetch = origFetch;
     console.error.mockRestore();
   });
 
