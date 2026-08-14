@@ -234,7 +234,7 @@ async function launchProfileInternal(profileId, options = {}) {
       const applyGeo = apply.geolocation !== false;
       const g = settings?.geolocation || {};
       const wantGeo = Number.isFinite(Number(g.latitude)) && Number.isFinite(Number(g.longitude));
-      if (applyGeo && (wantGeo || hasProxyConfig)) permissions.push('geolocation');
+      if (applyGeo && wantGeo) permissions.push('geolocation');
     } catch { }
     // Bước 4: Xử lý proxy — nếu proxy có xác thực (username/password) hoặc là SOCKS,
     // khởi động proxy forwarder nội bộ để Playwright kết nối qua localhost thay vì trực tiếp.
@@ -451,7 +451,6 @@ async function launchProfileInternal(profileId, options = {}) {
       extraHTTPHeaders: {},
       downloadsPath: downloadsFolder,
       acceptDownloads: true,
-      permissions: Array.from(new Set([...permissions, 'geolocation'])),
     };
 
     // Force UA to match the actual binary version — prevents binary/UA mismatch detection.
@@ -484,29 +483,6 @@ async function launchProfileInternal(profileId, options = {}) {
         contextOptions.extraHTTPHeaders['Accept-Language'] = `${spoofLang},${langBase};q=0.9,en;q=0.8`;
       }
     }
-    // Tự động lấy Timezone & Geolocation tương ứng với Proxy khi mở profile
-    if (hasProxyConfig && (applyTz || applyGeo)) {
-      try {
-        const { checkProxy } = require('../services/ProxyChecker');
-        const proxyInfo = await checkProxy(settings.proxy);
-        if (proxyInfo && proxyInfo.alive) {
-          if (applyTz && proxyInfo.timezone) {
-            fp.timezone = proxyInfo.timezone;
-            settings.timezone = proxyInfo.timezone;
-          }
-          if (applyGeo && proxyInfo.lat != null && proxyInfo.lon != null) {
-            if (!settings.geolocation) settings.geolocation = {};
-            settings.geolocation.latitude = Number(proxyInfo.lat);
-            settings.geolocation.longitude = Number(proxyInfo.lon);
-            settings.geolocation.accuracy = 10;
-          }
-          appendLog(profileId, `Proxy synced: ${proxyInfo.ip || ''} (${proxyInfo.city || ''}, ${proxyInfo.country || ''}) [lat: ${proxyInfo.lat}, lon: ${proxyInfo.lon}, tz: ${proxyInfo.timezone}]`);
-        }
-      } catch (e) {
-        appendLog(profileId, `Proxy geo/tz lookup warning: ${e?.message || e}`);
-      }
-    }
-
     // Thiết lập múi giờ giả — JavaScript Date và Intl API sẽ dùng timezone này.
     if (applyTz) contextOptions.timezoneId = fp.timezone || settings.timezone || 'UTC';
     // Do NOT set contextOptions.userAgent — Playwright calls Emulation.setUserAgentOverride
@@ -529,17 +505,12 @@ async function launchProfileInternal(profileId, options = {}) {
       }
     } catch { }
     // Thiết lập vị trí địa lý giả — Playwright inject vào browser context.
-    if (applyGeo) {
-      let lat = settings.geolocation?.latitude != null ? Number(settings.geolocation.latitude) : null;
-      let lon = settings.geolocation?.longitude != null ? Number(settings.geolocation.longitude) : null;
-      if (!Number.isFinite(lat) || !Number.isFinite(lon) || (lat === 0 && lon === 0)) {
-        lat = 51.5074;
-        lon = -0.1278;
-      }
+    // accuracy (độ chính xác tính bằng mét): thấp = GPS tốt, cao = định vị kém chính xác.
+    if (applyGeo && settings.geolocation && settings.geolocation.latitude != null && settings.geolocation.longitude != null) {
       contextOptions.geolocation = {
-        latitude: lat,
-        longitude: lon,
-        accuracy: Number(settings.geolocation?.accuracy || 10),
+        latitude: Number(settings.geolocation.latitude),
+        longitude: Number(settings.geolocation.longitude),
+        accuracy: Number(settings.geolocation.accuracy || 50),
       };
     }
     // storageState: đường dẫn tới file JSON chứa cookie, localStorage, sessionStorage của profile.
@@ -700,9 +671,9 @@ async function launchProfileInternal(profileId, options = {}) {
         appendLog(profileId, `[Download] Save error: ${dlErr?.message || dlErr}`);
       }
     });
-    // Cấp quyền cho context (micro/camera/geolocation) — luôn cấp geolocation mặc định
-    const finalPermissions = Array.from(new Set([...permissions, 'geolocation']));
-    try { await context.grantPermissions(finalPermissions); } catch (e) {}
+    // Cấp quyền cho context (micro/camera/geolocation) — nếu không cấp, trình duyệt
+    // sẽ hỏi người dùng popup, hoặc tự từ chối nếu ở headless mode.
+    if (permissions.length) { await context.grantPermissions(permissions); }
     // Bước 7: Inject fingerprint qua applyFingerprintInitScripts —
     // Tiêm các init script vào mọi trang mới để giả mạo (spoof) các thuộc tính trình duyệt:
     // UserAgent, Navigator (platform, plugins, hardwareConcurrency), WebGL renderer/vendor,

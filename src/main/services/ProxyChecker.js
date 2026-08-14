@@ -15,135 +15,39 @@ const TIMEOUT_MS = 8000;
 
 // IP detection endpoints (free, no key needed)
 const IP_APIS = [
-  { url: 'http://ip-api.com/json/?fields=query,country,countryCode,city,timezone,lat,lon,status', parse: parseIpApi },
-  { url: 'http://ipwhois.app/json/', parse: parseIpWhois },
+  { url: 'http://ip-api.com/json/?fields=query,country,countryCode,city,timezone,status', parse: parseIpApi },
   { url: 'https://ipinfo.io/json', parse: parseIpInfo },
-  { url: 'https://freeipapi.com/api/json', parse: parseFreeIpApi },
+  { url: 'https://ipwhois.app/json/', parse: parseIpWhois },
 ];
 
 function parseIpApi(body) {
-  try {
-    const d = JSON.parse(body);
-    if (d.status === 'fail') return null;
-    return {
-      ip: d.query,
-      country: d.country,
-      countryCode: d.countryCode,
-      city: d.city,
-      timezone: d.timezone,
-      lat: d.lat != null ? Number(d.lat) : null,
-      lon: d.lon != null ? Number(d.lon) : null,
-    };
-  } catch { return null; }
+  const d = JSON.parse(body);
+  if (d.status === 'fail') return null;
+  return { ip: d.query, country: d.country, countryCode: d.countryCode, city: d.city, timezone: d.timezone };
 }
 
 function parseIpInfo(body) {
-  try {
-    const d = JSON.parse(body);
-    let lat = null, lon = null;
-    if (d.loc) {
-      const parts = String(d.loc).split(',');
-      lat = parseFloat(parts[0]);
-      lon = parseFloat(parts[1]);
-    }
-    return {
-      ip: d.ip,
-      country: d.country,
-      countryCode: d.country,
-      city: d.city,
-      timezone: d.timezone,
-      lat: Number.isFinite(lat) ? lat : null,
-      lon: Number.isFinite(lon) ? lon : null,
-    };
-  } catch { return null; }
+  const d = JSON.parse(body);
+  return { ip: d.ip, country: d.country, countryCode: d.country, city: d.city, timezone: d.timezone };
 }
 
 function parseIpWhois(body) {
-  try {
-    const d = JSON.parse(body);
-    if (!d.success) return null;
-    const tz = (typeof d.timezone === 'object' && d.timezone?.id) ? d.timezone.id : d.timezone;
-    return {
-      ip: d.ip,
-      country: d.country,
-      countryCode: d.country_code,
-      city: d.city,
-      timezone: tz,
-      lat: d.latitude != null ? Number(d.latitude) : null,
-      lon: d.longitude != null ? Number(d.longitude) : null,
-    };
-  } catch { return null; }
-}
-
-function parseFreeIpApi(body) {
-  try {
-    const d = JSON.parse(body);
-    return {
-      ip: d.ipAddress,
-      country: d.countryName,
-      countryCode: d.countryCode,
-      city: d.cityName,
-      timezone: d.timeZone,
-      lat: d.latitude != null ? Number(d.latitude) : null,
-      lon: d.longitude != null ? Number(d.longitude) : null,
-    };
-  } catch { return null; }
-}
-
-/**
- * Normalize any proxy config format (including { server: 'ip:port' } or URLs)
- */
-function normalizeProxyConfig(cfg) {
-  if (!cfg) return null;
-  let type = (cfg.type || 'http').toLowerCase();
-  let host = cfg.host;
-  let port = cfg.port;
-  let username = cfg.username || '';
-  let password = cfg.password || '';
-
-  if ((!host || !port) && cfg.server) {
-    let raw = String(cfg.server).trim();
-    if (raw.includes('://')) {
-      try {
-        const u = new URL(raw);
-        type = u.protocol.replace(':', '') || type;
-        host = u.hostname;
-        port = u.port ? parseInt(u.port, 10) : (type.startsWith('socks') ? 1080 : 80);
-        if (u.username) username = decodeURIComponent(u.username);
-        if (u.password) password = decodeURIComponent(u.password);
-      } catch {
-        raw = raw.replace(/^https?:\/\//i, '').replace(/^socks\d?:\/\//i, '');
-      }
-    }
-    if (!host && raw) {
-      const parts = raw.split('@');
-      const hostPart = parts.length > 1 ? parts[1] : parts[0];
-      const authPart = parts.length > 1 ? parts[0] : null;
-      if (authPart && !username) {
-        const ap = authPart.split(':');
-        username = ap[0];
-        password = ap[1] || '';
-      }
-      const hp = hostPart.split(':');
-      host = hp[0];
-      port = hp[1] ? parseInt(hp[1], 10) : 80;
-    }
-  }
-  return { type, host, port: Number(port) || 80, username, password };
+  const d = JSON.parse(body);
+  if (!d.success) return null;
+  return { ip: d.ip, country: d.country, countryCode: d.country_code, city: d.city, timezone: d.timezone };
 }
 
 /**
  * Build a proxy URL string from config.
  */
 function buildProxyUrl(cfg) {
-  const norm = normalizeProxyConfig(cfg);
-  if (!norm || !norm.host) return null;
-  const type = (norm.type || 'http').toLowerCase();
+  if (!cfg || !cfg.host) return null;
+  const type = (cfg.type || 'http').toLowerCase();
   const scheme = type.startsWith('socks') ? type : 'http';
-  const auth = (norm.username && norm.password)
-    ? `${encodeURIComponent(norm.username)}:${encodeURIComponent(norm.password)}@`
-    : norm.username ? `${encodeURIComponent(norm.username)}@` : '';
-  return `${scheme}://${auth}${norm.host}:${norm.port || 80}`;
+  const auth = (cfg.username && cfg.password)
+    ? `${encodeURIComponent(cfg.username)}:${encodeURIComponent(cfg.password)}@`
+    : cfg.username ? `${encodeURIComponent(cfg.username)}@` : '';
+  return `${scheme}://${auth}${cfg.host}:${cfg.port || 80}`;
 }
 
 /**
@@ -205,11 +109,10 @@ async function httpGetViaSocks(targetUrl, cfg, timeoutMs) {
 /**
  * Check a proxy by sending a request to an IP detection API through it.
  * 
- * @param {Object} rawCfg - { type, host, port, username, password } or { server, type, ... }
- * @returns {Object} - { success, alive, ip, country, countryCode, city, timezone, lat, lon, latency, error }
+ * @param {Object} cfg - { type, host, port, username, password }
+ * @returns {Object} - { success, alive, ip, country, countryCode, city, timezone, latency, error }
  */
-async function checkProxy(rawCfg) {
-  const cfg = normalizeProxyConfig(rawCfg);
+async function checkProxy(cfg) {
   if (!cfg || !cfg.host || !cfg.port) {
     return { success: false, alive: false, error: 'Host and port are required' };
   }

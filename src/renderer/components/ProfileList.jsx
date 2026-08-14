@@ -270,8 +270,10 @@ export default function ProfileList({
       list = list.filter(p => {
         const st = profileStatuses[p.id]?.status;
         const isRunning = st === 'RUNNING' || (!st && !!runningWs[p.id]);
+        const isError = st === 'ERROR' || (!!errorProfiles[p.id] && !isRunning);
         if (statusFilter === 'running') return isRunning || st === 'STARTING';
-        if (statusFilter === 'stopped') return !isRunning && st !== 'STARTING' && st !== 'STOPPING';
+        if (statusFilter === 'stopped') return !isRunning && !isError && st !== 'STARTING' && st !== 'STOPPING';
+        if (statusFilter === 'error') return isError;
         return true;
       });
     }
@@ -299,6 +301,7 @@ export default function ProfileList({
           const rank = (p) => {
             const st = profileStatuses[p.id]?.status;
             if (st === 'RUNNING' || st === 'STARTING' || runningWs[p.id]) return 0;
+            if (st === 'ERROR' || errorProfiles[p.id]) return 2;
             return 1;
           };
           return rank(a) - rank(b);
@@ -308,7 +311,7 @@ export default function ProfileList({
     });
 
     return list;
-  }, [profiles, searchQuery, statusFilter, engineFilter, sortBy, profileStatuses, runningWs]);
+  }, [profiles, searchQuery, statusFilter, engineFilter, sortBy, profileStatuses, runningWs, errorProfiles]);
 
   const totalPages = Math.max(1, Math.ceil(filteredProfiles.length / pageSize));
   useEffect(() => { if (currentPage > totalPages) setCurrentPage(totalPages); }, [filteredProfiles.length, pageSize]);
@@ -441,6 +444,7 @@ export default function ProfileList({
             const isStopping = pStatus === 'STOPPING';
             const isRunning = pStatus === 'RUNNING' || (!isStarting && !isStopping && !!runningWs[profile.id]);
             const isTransitioning = isStarting || isStopping;
+            const hasError = (pStatus === 'ERROR' || !!errorProfiles[profile.id]) && !isRunning && !isStarting;
             const osInfo = getOsInfo(profile);
             const browser = profile?.fingerprint?.browser || 'Chrome';
             const res = profile?.fingerprint?.screenResolution || '1920x1080';
@@ -454,7 +458,7 @@ export default function ProfileList({
             const proxyType = hasProxy ? profile.settings.proxy.type.toUpperCase() : '';
             const proxyServer = hasProxy ? profile.settings.proxy.server : '';
 
-            const cardClass = `pl-card ${isRunning || isStarting ? 'pl-card-running' : ''}`;
+            const cardClass = `pl-card ${isRunning || isStarting ? 'pl-card-running' : ''} ${hasError ? 'pl-card-error' : ''}`;
 
             return (
               <div key={profile.id} className={cardClass}>
@@ -467,7 +471,7 @@ export default function ProfileList({
                   onClick={(e) => e.stopPropagation()}
                 />
                 {/* Status dot */}
-                <div className={`pl-dot ${isRunning || isStarting ? 'pl-dot-active' : ''} ${isStarting ? 'pl-dot-starting' : ''}`} />
+                <div className={`pl-dot ${isRunning || isStarting ? 'pl-dot-active' : ''} ${hasError ? 'pl-dot-error' : ''} ${isStarting ? 'pl-dot-starting' : ''}`} />
 
                 {/* "P" Avatar */}
                 <div style={{
@@ -544,6 +548,7 @@ export default function ProfileList({
                     {isRunning && <span className="pl-status-label pl-status-running">Running</span>}
                     {isStarting && <span className="pl-status-label pl-status-starting">Starting...</span>}
                     {isStopping && <span className="pl-status-label pl-status-starting">Stopping...</span>}
+                    {hasError && <span className="pl-status-label pl-status-error">Error</span>}
                   </div>
 
 
