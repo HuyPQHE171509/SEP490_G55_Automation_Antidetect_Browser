@@ -74,6 +74,13 @@ const API_REF = [
     { name: 'Try/catch with retry', desc: 'Retry on failure', snippet: `for (let attempt = 1; attempt <= 3; attempt++) {\n  try {\n    await page.click('#flaky-btn', { timeout: 5000 });\n    log('Clicked on attempt', attempt);\n    break;\n  } catch (e) {\n    log('Attempt', attempt, 'failed:', e.message);\n    if (attempt === 3) throw e;\n    await sleep(1000);\n  }\n}` },
     { name: 'Loop through pages', desc: 'Pagination pattern', snippet: `let pageNum = 1;\nwhile (true) {\n  log('Processing page', pageNum);\n  const items = await page.$$('.item');\n  log('Found', items.length, 'items');\n  const hasNext = await page.locator('.next-page').isVisible();\n  if (!hasNext) break;\n  await page.click('.next-page');\n  await page.waitForLoadState('networkidle');\n  pageNum++;\n}` },
   ]},
+  { cat: 'modules & screenshot', methods: [
+    { name: 'page.screenshot({ path })', desc: 'Capture & save page screenshot', snippet: `const path = require('path');\nconst filePath = path.join(process.cwd(), 'screenshot.png');\nawait page.screenshot({ path: filePath, fullPage: true });\nlog('Saved screenshot to:', filePath);` },
+    { name: 'actions.screenshot()', desc: 'Capture via Actions API', snippet: `const res = await actions.screenshot({ fullPage: true });\nlog('Screenshot captured:', res);` },
+    { name: 'require("axios")', desc: 'Call external API via axios', snippet: `const axios = require('axios');\nconst res = await axios.get('https://api.ipify.org?format=json');\nlog('My IP:', res.data.ip);` },
+    { name: 'require("fs")', desc: 'Read / write files in automation', snippet: `const fs = require('fs');\nfs.writeFileSync('output.txt', 'Hello Automation!');\nlog('Wrote file output.txt');` },
+    { name: 'fetch(url)', desc: 'Standard fetch request', snippet: `const res = await fetch('https://api.ipify.org?format=json');\nconst data = await res.json();\nlog('IP:', data.ip);` },
+  ]},
 ];
 
 const totalMethods = API_REF.reduce((s, c) => s + c.methods.length, 0);
@@ -1520,6 +1527,17 @@ function TaskLogsTab({ profiles = [] }) {
 }
 
 /* ═══════════════ Script Modules Tab ═══════════════ */
+const POPULAR_SCRIPT_MODULES = [
+    { name: 'docx', desc: 'Export Word (.docx)' },
+    { name: 'xlsx', desc: 'Excel spreadsheet' },
+    { name: 'screenshot-desktop', desc: 'Desktop screenshot' },
+    { name: 'jimp', desc: 'Image manipulation' },
+    { name: 'axios', desc: 'HTTP requests' },
+    { name: 'cheerio', desc: 'HTML parser' },
+    { name: 'lodash', desc: 'Utilities' },
+    { name: 'dayjs', desc: 'Date/time' },
+];
+
 function ScriptModulesTab() {
     const [modules, setModules] = useState([]);
     const [input, setInput] = useState('');
@@ -1532,8 +1550,8 @@ function ScriptModulesTab() {
         });
     }, []);
 
-    const handleInstall = async () => {
-        const pkg = input.trim();
+    const handleInstall = async (pkgToInstall) => {
+        const pkg = (pkgToInstall || input).trim();
         if (!pkg) return;
         setLoading(true);
         setStatus(null);
@@ -1564,15 +1582,19 @@ function ScriptModulesTab() {
     return (
         <div className="w-full flex-1">
             <div className="rounded-xl p-4 w-full" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
-                <p className="text-[0.8rem] mb-3" style={{ color: 'var(--muted)' }}>
+                <p className="text-[0.8rem] mb-2" style={{ color: 'var(--muted)' }}>
                     Install npm packages for use in automation scripts via{' '}
                     <code className="font-mono text-[0.75rem]" style={{ color: 'var(--fg)' }}>require('package-name')</code>.
-                    Built-in modules available: <code className="font-mono text-[0.7rem]" style={{ color: 'var(--fg)' }}>path, crypto, url, os, util, buffer, zlib</code>.
                 </p>
-                <div className="flex gap-2 mb-3">
+                <div className="text-[0.72rem] mb-3 p-2.5 rounded-lg" style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.15)', color: 'var(--muted)' }}>
+                    <span className="font-medium text-indigo-400">Available out-of-the-box (no installation needed):</span>{' '}
+                    <code className="font-mono text-[0.68rem] text-indigo-300">page.screenshot()</code>, <code className="font-mono text-[0.68rem] text-indigo-300">actions.screenshot()</code>, <code className="font-mono text-[0.68rem] text-indigo-300">fetch()</code>, <code className="font-mono text-[0.68rem] text-indigo-300">fs</code>, <code className="font-mono text-[0.68rem] text-indigo-300">path</code>, <code className="font-mono text-[0.68rem] text-indigo-300">crypto</code>, <code className="font-mono text-[0.68rem] text-indigo-300">child_process</code>, <code className="font-mono text-[0.68rem] text-indigo-300">http/https</code>, <code className="font-mono text-[0.68rem] text-indigo-300">buffer</code>.
+                </div>
+
+                <div className="flex gap-2 mb-2">
                     <input
                         type="text"
-                        placeholder="e.g. axios or lodash@4"
+                        placeholder="e.g. screenshot-desktop, axios, or lodash@4"
                         value={input}
                         onChange={e => setInput(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && !loading && handleInstall()}
@@ -1582,11 +1604,39 @@ function ScriptModulesTab() {
                     />
                     <button
                         className="btn btn-success text-[0.75rem] min-w-[80px]"
-                        onClick={handleInstall}
+                        onClick={() => handleInstall()}
                         disabled={loading || !input.trim()}
                     >
-                        {loading ? '...' : 'Install'}
+                        {loading ? 'Installing...' : 'Install'}
                     </button>
+                </div>
+
+                {/* Popular Modules Quick Install */}
+                <div className="flex items-center gap-1.5 flex-wrap mb-3">
+                    <span className="text-[0.7rem] text-gray-400">Popular:</span>
+                    {POPULAR_SCRIPT_MODULES.map(pm => {
+                        const isInstalled = modules.some(m => m.name === pm.name);
+                        return (
+                            <button
+                                key={pm.name}
+                                onClick={() => {
+                                    if (!isInstalled && !loading) {
+                                        setInput(pm.name);
+                                        handleInstall(pm.name);
+                                    }
+                                }}
+                                disabled={loading || isInstalled}
+                                className={`text-[0.68rem] px-2 py-0.5 rounded-md transition-all font-mono ${
+                                    isInstalled
+                                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 opacity-70 cursor-default'
+                                        : 'bg-white/5 hover:bg-indigo-500/20 text-gray-300 hover:text-indigo-300 border border-white/10'
+                                }`}
+                                title={isInstalled ? 'Already installed' : `Click to install ${pm.name} (${pm.desc})`}
+                            >
+                                {pm.name} {isInstalled && '✓'}
+                            </button>
+                        );
+                    })}
                 </div>
 
                 {status && (
@@ -1595,18 +1645,22 @@ function ScriptModulesTab() {
                     </div>
                 )}
 
+                <div className="font-medium text-[0.75rem] mb-2" style={{ color: 'var(--fg)' }}>
+                    Installed Packages ({modules.length})
+                </div>
+
                 {modules.length === 0 ? (
-                    <p className="text-[0.75rem] italic" style={{ color: 'var(--muted)' }}>No modules installed.</p>
+                    <p className="text-[0.75rem] italic" style={{ color: 'var(--muted)' }}>No additional npm modules installed yet.</p>
                 ) : (
-                    <div className="flex flex-col gap-1">
+                    <div className="flex flex-col gap-1.5 max-h-[300px] overflow-y-auto pr-1">
                         {modules.map(m => (
                             <div key={m.name} className="flex items-center justify-between px-3 py-1.5 rounded-md" style={{ background: 'var(--glass)', border: '1px solid var(--border2)' }}>
                                 <div>
-                                    <span className="text-[0.78rem] font-medium" style={{ color: 'var(--fg)' }}>{m.name}</span>
-                                    <span className="ml-2 text-[0.65rem]" style={{ color: 'var(--muted)' }}>v{m.version}</span>
+                                    <span className="text-[0.78rem] font-mono font-medium text-emerald-400">{m.name}</span>
+                                    <span className="ml-2 text-[0.65rem] text-gray-400">v{m.version}</span>
                                 </div>
                                 <button
-                                    className="text-[0.65rem] px-2 py-0.5 rounded text-red-400 hover:bg-red-500/10 transition-all"
+                                    className="text-[0.65rem] px-2 py-0.5 rounded text-rose-400 hover:bg-rose-500/10 transition-all border border-rose-500/20 hover:border-rose-500/40"
                                     onClick={() => handleUninstall(m.name)}
                                     disabled={loading}
                                     title="Uninstall"

@@ -24,6 +24,8 @@ const vm = require('vm');
 // các module Node.js nhạy cảm khác — trừ những gì ta cố ý cấp trong sandbox.
 
 const path = require('path');
+const fs = require('fs');
+const { createRequire } = require('module');
 // Dùng để xây dựng đường dẫn tới thư mục node_modules của script-modules.
 
 const { appendLog } = require('../logging/logger');
@@ -45,6 +47,9 @@ const { getModulesDir } = require('../storage/scriptModules');
 // Lấy đường dẫn tới thư mục chứa các NPM package mà người dùng đã cài thêm
 // qua tab "Script Modules" trong giao diện.
 
+const { getDataRoot, getDownloadsDir, getScreenshotsDir, getExportsDir } = require('../storage/paths');
+// Thư mục lưu trữ chuyên biệt (data, downloads, screenshots, exports) tách biệt khi build exe.
+
 // ═══════════════════════════════════════════════════════════════
 // PHẦN 2: HÀM `require` AN TOÀN CHO SCRIPT NGƯỜI DÙNG
 // ═══════════════════════════════════════════════════════════════
@@ -53,40 +58,75 @@ const { getModulesDir } = require('../storage/scriptModules');
  * Tạo hàm `require` tùy chỉnh dành cho code người dùng bên trong sandbox.
  *
  * TẠI SAO cần hàm này?
- *   - require() mặc định của Node.js cho phép load bất kỳ module nào,
- *     kể cả `fs`, `child_process`, `net`... — RẤT NGUY HIỂM nếu cấp cho script lạ.
- *   - Hàm này giới hạn chỉ cho phép:
- *       (a) Các built-in "vô hại" trong danh sách trắng ALLOWED_BUILTINS.
- *       (b) Các NPM package đã được người dùng cài thêm vào thư mục modulesDir.
+ *   - require() mặc định của Node.js cần được kiểm soát để đảm bảo an toàn.
+ *   - Hàm này hỗ trợ:
+ *       (a) Các built-in Node.js tiêu chuẩn cho tự động hóa và xử lý ảnh/file.
+ *       (b) Các NPM package đã được người dùng cài thêm vào thư mục script-modules (qua createRequire).
+ *       (c) Fallback an toàn tới các package có sẵn của ứng dụng.
  *
  * @param {string} profileId — dùng để log lỗi gắn với đúng profile.
  */
 function makeScriptRequire(profileId) {
   // Lấy thư mục script-modules một lần khi khởi tạo; nếu chưa cài đặt thì trả về null.
   const modulesDir = (() => { try { return getModulesDir(); } catch { return null; } })();
+  let customRequire = null;
+  if (modulesDir) {
+    try {
+      const pkgPath = path.join(modulesDir, 'package.json');
+      if (fs.existsSync(pkgPath)) {
+        customRequire = createRequire(pkgPath);
+      }
+    } catch {}
+  }
 
-  // Danh sách trắng (whitelist) các built-in Node.js được phép dùng trong script.
-  // Các module này không có khả năng truy cập hệ thống file hay spawn process.
-  const ALLOWED_BUILTINS = new Set(['path', 'url', 'querystring', 'crypto', 'buffer', 'stream', 'events', 'util', 'os', 'zlib']);
+  // Danh sách các built-in Node.js được hỗ trợ trong automation script
+  const ALLOWED_BUILTINS = new Set([
+    'fs', 'fs/promises',
+    'path', 'path/posix', 'path/win32',
+    'url', 'querystring',
+    'crypto', 'buffer', 'stream', 'stream/promises', 'events', 'util', 'os', 'zlib',
+    'http', 'https', 'tls', 'net', 'dns', 'dns/promises',
+    'assert', 'child_process', 'string_decoder', 'timers', 'timers/promises'
+  ]);
 
   // Trả về hàm require() tùy chỉnh — hàm này sẽ được inject vào sandbox.
   return function scriptRequire(name) {
-    // Nếu tên module nằm trong whitelist, cho phép require() bình thường.
-    if (ALLOWED_BUILTINS.has(name)) return require(name);
+    if (typeof name !== 'string') throw new Error('Module name must be a string');
 
-    // Nếu modulesDir chưa được cấu hình, không thể load module bên ngoài.
-    if (!modulesDir) throw new Error(`Script modules directory not available`);
-
-    // Thử load NPM package từ thư mục script-modules của người dùng.
-    try {
-      // Ghép đường dẫn: <modulesDir>/node_modules/<tên package>
-      const modPath = path.join(modulesDir, 'node_modules', name);
-      return require(modPath);
-    } catch (e) {
-      // Nếu không tìm thấy, ghi log hướng dẫn người dùng cài đặt thêm.
-      appendLog(profileId, `Script: require('${name}') failed — ${e.message}. Install it via Script Modules tab.`);
-      throw new Error(`Module '${name}' not found. Install it via Script Modules tab first.`);
+    // Xử lý tiền tố node: (VD: node:fs -> fs)
+    const rawName = name.startsWith('node:') ? name.slice(5) : name;
+    if (ALLOWED_BUILTINS.has(rawName)) {
+      return require(rawName);
     }
+
+    // 1. Thử load qua createRequire từ thư mục script-modules (hỗ trợ subpath exports & dependencies)
+    if (customRequire) {
+      try {
+        return customRequire(name);
+      } catch (e) {
+        if (!e.message.includes(`Cannot find module '${name}'`) && !e.message.includes(`Cannot find module "${name}"`)) {
+          appendLog(profileId, `Script: require('${name}') module load error — ${e.message}`);
+          throw e;
+        }
+      }
+    }
+
+    // 2. Thử load trực tiếp theo đường dẫn node_modules của script-modules
+    if (modulesDir) {
+      try {
+        const modPath = path.join(modulesDir, 'node_modules', name);
+        return require(modPath);
+      } catch {}
+    }
+
+    // 3. Fallback: kiểm tra node_modules của app nếu package đã có sẵn (playwright, axios, etc.)
+    try {
+      return require(name);
+    } catch {}
+
+    // Nếu không tìm thấy, ghi log hướng dẫn người dùng cài đặt thêm
+    appendLog(profileId, `Script: require('${name}') failed — module not found. Install it via Script Modules tab.`);
+    throw new Error(`Module '${name}' not found. Install it via Script Modules tab first.`);
   };
 }
 
@@ -609,7 +649,7 @@ async function executeScript(profileId, code, { timeoutMs = 120000 } = {}) {
       }
     },
 
-    // Built-in JavaScript globals vô hại — script cần chúng để hoạt động bình thường.
+    // Built-in JavaScript & Web standard globals
     JSON,
     Date,
     Math,
@@ -632,7 +672,41 @@ async function executeScript(profileId, code, { timeoutMs = 120000 } = {}) {
     decodeURIComponent,
     encodeURI,
     decodeURI,
+    URL: typeof URL !== 'undefined' ? URL : undefined,
+    URLSearchParams: typeof URLSearchParams !== 'undefined' ? URLSearchParams : undefined,
+    TextEncoder: typeof TextEncoder !== 'undefined' ? TextEncoder : undefined,
+    TextDecoder: typeof TextDecoder !== 'undefined' ? TextDecoder : undefined,
+    atob: typeof atob !== 'undefined' ? atob : undefined,
+    btoa: typeof btoa !== 'undefined' ? btoa : undefined,
+    fetch: typeof fetch !== 'undefined' ? fetch : undefined,
+    Headers: typeof Headers !== 'undefined' ? Headers : undefined,
+    Request: typeof Request !== 'undefined' ? Request : undefined,
+    Response: typeof Response !== 'undefined' ? Response : undefined,
+    FormData: typeof FormData !== 'undefined' ? FormData : undefined,
+    Blob: typeof Blob !== 'undefined' ? Blob : undefined,
+    AbortController: typeof AbortController !== 'undefined' ? AbortController : undefined,
+    AbortSignal: typeof AbortSignal !== 'undefined' ? AbortSignal : undefined,
+    process: {
+      env: { ...process.env },
+      platform: process.platform,
+      arch: process.arch,
+      version: process.version,
+      cwd: () => getDataRoot(),
+    },
+
+    // Thư mục lưu trữ riêng biệt (tự động tạo & an toàn khi build .exe)
+    __dirname: getDataRoot(),
+    dataDir: getDataRoot(),
+    downloadsDir: getDownloadsDir(),
+    screenshotsDir: getScreenshotsDir(),
+    exportsDir: getExportsDir(),
+    getDownloadPath: (fileName = '') => path.join(getDownloadsDir(), String(fileName)),
+    getScreenshotPath: (fileName = '') => path.join(getScreenshotsDir(), String(fileName)),
+    getExportPath: (fileName = '') => path.join(getExportsDir(), String(fileName)),
   };
+
+  sandbox.globalThis = sandbox;
+  sandbox.global = sandbox;
 
   // vm.createContext() tạo V8 context hoàn toàn cô lập cho sandbox.
   // Sau lệnh này, sandbox object trở thành global scope của vm context đó.

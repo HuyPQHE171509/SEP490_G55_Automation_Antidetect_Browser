@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { runningProfiles } = require('../state/runtime');
 const { appendLog } = require('../logging/logger');
+const { getScreenshotsDir, getExportsDir } = require('../storage/paths');
 
 // ────────────────────────────────────────────────────────────────────────────────
 // HELPER UTILITIES — Chuẩn hóa kết quả trả về
@@ -336,12 +337,17 @@ async function captureScreen(profileId, { index = 0, path: outPath, fullPage = f
   const { success, error, page, cleanup } = await withPage(profileId, { index });
   if (!success) return err(error);
   try {
-    // Tạo thư mục đích trước nếu chưa tồn tại (tránh lỗi ENOENT khi ghi file)
-    if (outPath) { try { fs.mkdirSync(path.dirname(outPath), { recursive: true }); } catch {} }
-    const result = await page.screenshot({ path: outPath, fullPage: !!fullPage, type: 'png' });
+    let resolvedPath = outPath;
+    if (resolvedPath) {
+      if (!path.isAbsolute(resolvedPath)) {
+        resolvedPath = path.join(getScreenshotsDir(), resolvedPath);
+      }
+      try { fs.mkdirSync(path.dirname(resolvedPath), { recursive: true }); } catch {}
+    }
+    const result = await page.screenshot({ path: resolvedPath, fullPage: !!fullPage, type: 'png' });
     await cleanup();
     // Trả về đường dẫn file nếu đã lưu, hoặc base64 nếu không có path
-    return ok(outPath ? { path: outPath } : { base64: Buffer.from(result).toString('base64') });
+    return ok(resolvedPath ? { path: resolvedPath } : { base64: Buffer.from(result).toString('base64') });
   } catch (e) { await cleanup(); return err(e?.message || e); }
 }
 
@@ -355,10 +361,16 @@ async function captureElement(profileId, { selector, path: outPath, timeout = 10
     const el = page.locator(selector).first();
     // Đợi element hiển thị trước khi chụp (state: 'visible' đảm bảo element trong viewport và không bị ẩn)
     await el.waitFor({ state: 'visible', timeout });
-    if (outPath) { try { fs.mkdirSync(path.dirname(outPath), { recursive: true }); } catch {} }
-    const result = await el.screenshot({ path: outPath, type: 'png' });
+    let resolvedPath = outPath;
+    if (resolvedPath) {
+      if (!path.isAbsolute(resolvedPath)) {
+        resolvedPath = path.join(getScreenshotsDir(), resolvedPath);
+      }
+      try { fs.mkdirSync(path.dirname(resolvedPath), { recursive: true }); } catch {}
+    }
+    const result = await el.screenshot({ path: resolvedPath, type: 'png' });
     await cleanup();
-    return ok(outPath ? { path: outPath } : { base64: Buffer.from(result).toString('base64') });
+    return ok(resolvedPath ? { path: resolvedPath } : { base64: Buffer.from(result).toString('base64') });
   } catch (e) { await cleanup(); return err(e?.message || e); }
 }
 
@@ -652,6 +664,11 @@ const ACTION_MAP = {
   // ── Chụp màn hình ────────────────────────────────────────────────────────────
   'capture.screen': captureScreen,
   'capture.element': captureElement,
+  'screenshot': captureScreen,
+  'screenshot.full': captureScreen,
+  'screenshot.element': captureElement,
+  'captureScreen': captureScreen,
+  'captureElement': captureElement,
 
   // ── Chờ đợi ──────────────────────────────────────────────────────────────────
   'wait': waitAction,

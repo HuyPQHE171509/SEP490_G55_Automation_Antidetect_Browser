@@ -4,26 +4,42 @@ const { app } = require('electron');
 
 let __dataRoot = null;
 
+function getUserDataFallback() {
+  if (app && typeof app.getPath === 'function') {
+    try { return app.getPath('userData'); } catch {}
+  }
+  return path.join(process.cwd(), '.app_data');
+}
+
 function getDataRoot() {
   if (__dataRoot) return __dataRoot;
   try {
-    const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
-    // In dev, store runtime data under Electron userData instead of repo tree to prevent dev watchers (electronmon) from restarting on JSON writes.
+    const isDev = process.env.NODE_ENV === 'development' || !app?.isPackaged;
+    const userData = getUserDataFallback();
+    const exeDir = (app && typeof app.getPath === 'function') ? path.dirname(app.getPath('exe')) : process.cwd();
+    // In dev: dùng userData/dev-data để tránh trigger electronmon reload.
+    // In prod/exe: ưu tiên portable 'data' cùng cấp với file exe, nếu không có quyền ghi (vd trong Program Files) thì tự động chuyển về userData/data.
     const base = isDev
-      ? path.join(app.getPath('userData'), 'dev-data')
-      : path.join(path.dirname(app.getPath('exe')), 'data');
+      ? path.join(userData, 'dev-data')
+      : path.join(exeDir, 'data');
     fs.mkdirSync(base, { recursive: true });
+    
+    // Kiểm tra quyền ghi thực tế
+    const testFile = path.join(base, '.write_check');
+    fs.writeFileSync(testFile, 'ok');
+    fs.unlinkSync(testFile);
+
     __dataRoot = base;
     return __dataRoot;
   } catch (e) {
     try {
-      const fb = path.join(app.getPath('userData'), 'data');
+      const fb = path.join(getUserDataFallback(), 'data');
       fs.mkdirSync(fb, { recursive: true });
       __dataRoot = fb;
       return __dataRoot;
     } catch { }
   }
-  __dataRoot = app.getPath('userData');
+  __dataRoot = getUserDataFallback();
   return __dataRoot;
 }
 
@@ -103,6 +119,24 @@ function initializeDataFiles() {
   }
 }
 
+function getDownloadsDir() {
+  const dir = path.join(getDataRoot(), 'downloads');
+  ensureDir(dir);
+  return dir;
+}
+
+function getScreenshotsDir() {
+  const dir = path.join(getDataRoot(), 'screenshots');
+  ensureDir(dir);
+  return dir;
+}
+
+function getExportsDir() {
+  const dir = path.join(getDataRoot(), 'exports');
+  ensureDir(dir);
+  return dir;
+}
+
 module.exports = {
   getDataRoot,
   ensureDir,
@@ -114,5 +148,8 @@ module.exports = {
   presetsFilePath,
   scriptsFilePath,
   proxiesFilePath,
+  getDownloadsDir,
+  getScreenshotsDir,
+  getExportsDir,
   initializeDataFiles,
 };

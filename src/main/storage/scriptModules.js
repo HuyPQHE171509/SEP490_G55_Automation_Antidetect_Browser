@@ -52,15 +52,17 @@ function runNpm(args, cwd) {
     const proc = spawn('npm', args, {
       cwd,           // Chạy npm trong thư mục script-modules để --save ghi đúng vào package.json của thư mục đó
       shell: true,   // Cần shell: true trên Windows để npm (script batch) chạy được
-      timeout: 120000, // Timeout 2 phút — cài package lớn có thể mất nhiều thời gian
+      timeout: 180000, // Timeout 3 phút — cài package lớn (sharp, jimp, screenshot-desktop) có thể mất nhiều thời gian
       env: { ...process.env, NODE_ENV: 'production' }, // Bỏ devDependencies, chỉ cài production packages
     });
     let stderr = '';
-    proc.stderr.on('data', d => { stderr += d.toString(); }); // Thu thập stderr để báo lỗi chi tiết cho người dùng
+    let stdout = '';
+    proc.stdout?.on('data', d => { stdout += d.toString(); });
+    proc.stderr?.on('data', d => { stderr += d.toString(); }); // Thu thập stderr để báo lỗi chi tiết cho người dùng
     proc.on('error', (e) => resolve({ ok: false, error: e.message })); // Lỗi spawn (VD: npm không tìm thấy trong PATH)
     proc.on('close', (code) => {
-      if (code === 0) resolve({ ok: true });
-      else resolve({ ok: false, error: stderr.slice(0, 500) || `npm exited with code ${code}` }); // Giới hạn 500 ký tự stderr để tránh log quá dài
+      if (code === 0) resolve({ ok: true, stdout });
+      else resolve({ ok: false, error: (stderr.trim() || stdout.trim() || `npm exited with code ${code}`).slice(0, 1000) });
     });
   });
 }
@@ -70,20 +72,22 @@ function installModule(packageName) {
   return new Promise(async (resolve) => {
     try {
       // Validate tên package bằng regex TRƯỚC KHI truyền vào lệnh npm
-      // Mục đích bảo mật: ngăn shell injection nếu tên package chứa ký tự đặc biệt như `;`, `&`, `|`, `..`
-      // Regex cho phép: tên thông thường, scoped package (@scope/name), và version tag (name@version)
-      if (!packageName || typeof packageName !== 'string' || !/^[@a-zA-Z0-9._\-/]+(@[\w.\-]+)?$/.test(packageName.trim())) {
-        return resolve({ success: false, error: 'Invalid package name' });
+      // Ngăn shell injection nếu tên package chứa ký tự đặc biệt như `;`, `&`, `|`, `..`
+      // Cho phép: scoped package (@scope/name), unscoped name, version tag/range (name@^1.0.0, name@latest)
+      const trimmed = (packageName || '').trim();
+      const PKG_REGEX = /^(@[a-zA-Z0-9_.\-]+\/)?[a-zA-Z0-9_.\-]+(@[a-zA-Z0-9_.\-^~]+)?$/;
+      if (!trimmed || !PKG_REGEX.test(trimmed)) {
+        return resolve({ success: false, error: 'Invalid package name. Examples: axios, screenshot-desktop, @types/node@latest' });
       }
       const dir = getModulesDir();
-      appendLog('system', `Script modules: installing "${packageName}"...`);
+      appendLog('system', `Script modules: installing "${trimmed}"...`);
       // --save: tự động cập nhật dependencies trong package.json → listModules() sẽ phản ánh đúng
-      const result = await runNpm(['install', '--save', packageName.trim()], dir);
+      const result = await runNpm(['install', '--save', trimmed], dir);
       if (result.ok) {
-        appendLog('system', `Script modules: "${packageName}" installed OK`);
+        appendLog('system', `Script modules: "${trimmed}" installed OK`);
         resolve({ success: true, modules: listModules() }); // Trả về danh sách cập nhật ngay sau khi cài xong
       } else {
-        appendLog('system', `Script modules: install "${packageName}" failed — ${result.error}`);
+        appendLog('system', `Script modules: install "${trimmed}" failed — ${result.error}`);
         resolve({ success: false, error: result.error });
       }
     } catch (e) {
