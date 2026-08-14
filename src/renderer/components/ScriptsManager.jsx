@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Play, Plus, Trash2, Search, FileCode, RefreshCw, ChevronRight, X, Download, Upload, Edit2, Pause, Square, Clock } from 'lucide-react';
+import { Play, Plus, Trash2, Search, FileCode, RefreshCw, ChevronRight, ChevronLeft, X, Download, Upload, Edit2, Pause, Square, Clock, Sliders } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 
 /* ═══════════════ API Reference Data ═══════════════ */
@@ -136,6 +136,8 @@ function ScriptsTab({ profiles }) {
     const [runNowLoading, setRunNowLoading] = useState(false);  // Bug #6: trạng thái nút Test Run Now
     // Center panel tab: 'settings' | 'apiref'
     const [settingsTab, setSettingsTab] = useState('settings');
+    // Toggle middle settings panel to expand/fullscreen the code editor
+    const [showSettingsPanel, setShowSettingsPanel] = useState(true);
 
     const load = useCallback(async () => {
         try {
@@ -157,6 +159,7 @@ function ScriptsTab({ profiles }) {
         setCronProfileId('');
         setCronError('');        // reset lỗi validate khi tạo script mới
         setSettingsTab('settings');
+        setShowSettingsPanel(true);
     };
 
     // Bug #5 fix: reset cronError mỗi khi expression thay đổi
@@ -473,231 +476,303 @@ function ScriptsTab({ profiles }) {
             {/* ═══ Center Settings Panel + Right Editor ═══ */}
             {editing ? (
                 <>
-                    {/* Center: Settings / API Reference tabs */}
-                    <div className="w-[370px] shrink-0 flex flex-col" style={{ background: 'var(--card)', borderRight: '1px solid var(--border)' }}>
-                        {/* Header */}
-                        <div className="px-3 py-2 flex items-center justify-between" style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)' }}>
-                            <span className="text-[0.85rem] font-semibold" style={{ color: 'var(--fg)' }}>{editing.id ? 'Edit Script' : 'New Script'}</span>
-                            <div className="flex gap-2">
-                                <button className="btn btn-secondary text-[0.7rem]" onClick={() => { setEditing(null); setSelectedId(null); }}>Cancel</button>
-                                <button className="btn btn-success text-[0.7rem]" onClick={handleSave}>Save</button>
+                    {/* Center: Settings / API Reference tabs (Collapsible) */}
+                    {showSettingsPanel && (
+                        <div className="w-[370px] shrink-0 flex flex-col" style={{ background: 'var(--card)', borderRight: '1px solid var(--border)' }}>
+                            {/* Header */}
+                            <div className="px-3 py-2 flex items-center justify-between" style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)' }}>
+                                <div className="flex items-center gap-1.5">
+                                    <button
+                                        type="button"
+                                        className="p-1 rounded transition hover:bg-white/10 cursor-pointer"
+                                        style={{ color: 'var(--muted)' }}
+                                        onClick={() => setShowSettingsPanel(false)}
+                                        title="Ẩn tab cấu hình (phóng to bảng code)"
+                                    >
+                                        <ChevronLeft size={16} />
+                                    </button>
+                                    <span className="text-[0.85rem] font-semibold" style={{ color: 'var(--fg)' }}>{editing.id ? 'Edit Script' : 'New Script'}</span>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button className="btn btn-secondary text-[0.7rem]" onClick={() => { setEditing(null); setSelectedId(null); }}>Cancel</button>
+                                    <button className="btn btn-success text-[0.7rem]" onClick={handleSave}>Save</button>
+                                </div>
                             </div>
-                        </div>
-                        {/* Tab bar */}
-                        <div className="flex" style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
-                            {[{ id: 'settings', label: 'SETTINGS' }, { id: 'apiref', label: 'API REFERENCE' }].map(t => (
-                                <button key={t.id}
-                                    className="px-4 py-2 text-[0.7rem] font-semibold tracking-wide transition"
-                                    style={{
-                                        color: settingsTab === t.id ? 'var(--primary)' : 'var(--muted)',
-                                        borderBottom: settingsTab === t.id ? '2px solid var(--primary)' : '2px solid transparent',
-                                        background: 'transparent',
-                                    }}
-                                    onClick={() => setSettingsTab(t.id)}>{t.label}</button>
-                            ))}
-                        </div>
+                            {/* Tab bar */}
+                            <div className="flex" style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
+                                {[{ id: 'settings', label: 'SETTINGS' }, { id: 'apiref', label: 'API REFERENCE' }].map(t => (
+                                    <button key={t.id}
+                                        className="px-4 py-2 text-[0.7rem] font-semibold tracking-wide transition"
+                                        style={{
+                                            color: settingsTab === t.id ? 'var(--primary)' : 'var(--muted)',
+                                            borderBottom: settingsTab === t.id ? '2px solid var(--primary)' : '2px solid transparent',
+                                            background: 'transparent',
+                                        }}
+                                        onClick={() => setSettingsTab(t.id)}>{t.label}</button>
+                                ))}
+                            </div>
 
-                        {settingsTab === 'settings' ? (
-                            <div className="flex-1 overflow-y-auto">
-                                {/* Name + Description */}
-                                <div className="p-3 space-y-3" style={{ borderBottom: '1px solid var(--border)' }}>
-                                    <div>
-                                        <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>Name</label>
-                                        <input className="w-full rounded px-2 py-1.5 text-[0.75rem]"
-                                            style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
-                                            value={editing.name} onChange={e => setEditing(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Login to site" />
-                                    </div>
-                                    <div>
-                                        <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>Description (optional)</label>
-                                        <input className="w-full rounded px-2 py-1.5 text-[0.75rem]"
-                                            style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
-                                            value={editing.description} onChange={e => setEditing(p => ({ ...p, description: e.target.value }))} placeholder="What does this script do?" />
-                                    </div>
-                                </div>
-                                {/* Browser Mode */}
-                                <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
-                                    <div>
-                                        <span className="text-[0.78rem] font-semibold block" style={{ color: 'var(--fg)' }}>Browser mode</span>
-                                        <span className="text-[0.68rem]" style={{ color: 'var(--muted)' }}>{browserMode === 'headless' ? 'Background (no window)' : 'Visible (show window)'}</span>
-                                    </div>
-                                    <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border2)' }}>
-                                        <button className={`px-3 py-1 text-[0.72rem] font-medium transition ${browserMode === 'headless' ? 'text-white' : ''}`}
-                                            style={{ background: browserMode === 'headless' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'headless' ? '#fff' : 'var(--fg)' }}
-                                            onClick={() => setBrowserMode('headless')}>Headless</button>
-                                        <button className={`px-3 py-1 text-[0.72rem] font-medium transition ${browserMode === 'visible' ? 'text-white' : ''}`}
-                                            style={{ background: browserMode === 'visible' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'visible' ? '#fff' : 'var(--fg)' }}
-                                            onClick={() => setBrowserMode('visible')}>Visible</button>
-                                    </div>
-                                </div>
-
-                                {/* ═══ Auto-Schedule (Cron) ═══ */}
-                                <div className="p-3 space-y-3" style={{ borderBottom: '1px solid var(--border)' }}>
-                                    {/* Header + toggle */}
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <Clock size={14} style={{ color: 'var(--primary)' }} />
-                                            <span className="text-[0.78rem] font-semibold" style={{ color: 'var(--fg)' }}>Auto-Schedule</span>
+                            {settingsTab === 'settings' ? (
+                                <div className="flex-1 overflow-y-auto">
+                                    {/* Name + Description */}
+                                    <div className="p-3 space-y-3" style={{ borderBottom: '1px solid var(--border)' }}>
+                                        <div>
+                                            <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>Name</label>
+                                            <input className="w-full rounded px-2 py-1.5 text-[0.75rem]"
+                                                style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
+                                                value={editing.name} onChange={e => setEditing(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Login to site" />
                                         </div>
-                                        {/* Toggle switch */}
-                                        <label className="relative inline-flex items-center cursor-pointer">
-                                            <input type="checkbox" className="sr-only peer"
-                                                checked={cronEnabled}
-                                                onChange={e => setCronEnabled(e.target.checked)} />
-                                            <div className="w-9 h-5 rounded-full transition"
-                                                style={{
-                                                    background: cronEnabled ? 'var(--primary)' : 'var(--glass)',
-                                                    border: '1px solid var(--border2)',
-                                                }}>
-                                                <div className="w-4 h-4 bg-white rounded-full transition-transform"
-                                                    style={{
-                                                        transform: cronEnabled ? 'translateX(16px)' : 'translateX(2px)',
-                                                        marginTop: '1px',
-                                                    }} />
-                                            </div>
-                                        </label>
+                                        <div>
+                                            <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>Description (optional)</label>
+                                            <input className="w-full rounded px-2 py-1.5 text-[0.75rem]"
+                                                style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
+                                                value={editing.description} onChange={e => setEditing(p => ({ ...p, description: e.target.value }))} placeholder="What does this script do?" />
+                                        </div>
+                                    </div>
+                                    {/* Browser Mode */}
+                                    <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+                                        <div>
+                                            <span className="text-[0.78rem] font-semibold block" style={{ color: 'var(--fg)' }}>Browser mode</span>
+                                            <span className="text-[0.68rem]" style={{ color: 'var(--muted)' }}>{browserMode === 'headless' ? 'Background (no window)' : 'Visible (show window)'}</span>
+                                        </div>
+                                        <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border2)' }}>
+                                            <button className={`px-3 py-1 text-[0.72rem] font-medium transition ${browserMode === 'headless' ? 'text-white' : ''}`}
+                                                style={{ background: browserMode === 'headless' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'headless' ? '#fff' : 'var(--fg)' }}
+                                                onClick={() => setBrowserMode('headless')}>Headless</button>
+                                            <button className={`px-3 py-1 text-[0.72rem] font-medium transition ${browserMode === 'visible' ? 'text-white' : ''}`}
+                                                style={{ background: browserMode === 'visible' ? 'var(--primary)' : 'var(--glass)', color: browserMode === 'visible' ? '#fff' : 'var(--fg)' }}
+                                                onClick={() => setBrowserMode('visible')}>Visible</button>
+                                        </div>
                                     </div>
 
-                                    <p className="text-[0.66rem]" style={{ color: 'var(--muted)' }}>
-                                        When enabled, the script will automatically run according to the cron schedule on the specified profile.
-                                    </p>
-
-                                    {/* Khi bật → hiển thị các field bên dưới */}
-                                    {cronEnabled && (
-                                        <>
-                                            {/* Cron expression input */}
-                                            <div>
-                                                <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>
-                                                    Cron expression
-                                                </label>
-                                                <input type="text"
-                                                    id="cron-expression-input"
-                                                    className="w-full rounded px-2 py-1.5 text-[0.75rem] font-mono"
-                                                    style={{ background: 'var(--glass-input)', border: `1px solid ${cronError ? '#ef4444' : 'var(--border2)'}`, color: 'var(--fg)' }}
-                                                    value={cronSchedule}
-                                                    onChange={e => handleCronScheduleChange(e.target.value)}
-                                                    placeholder="e.g. 0 9 * * 1-5" />
-                                                <p className="text-[0.62rem] mt-1" style={{ color: 'var(--muted)' }}>
-                                                    Format: <code>minute hour day month weekday</code>
-                                                </p>
+                                    {/* ═══ Auto-Schedule (Cron) ═══ */}
+                                    <div className="p-3 space-y-3" style={{ borderBottom: '1px solid var(--border)' }}>
+                                        {/* Header + toggle */}
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <Clock size={14} style={{ color: 'var(--primary)' }} />
+                                                <span className="text-[0.78rem] font-semibold" style={{ color: 'var(--fg)' }}>Auto-Schedule</span>
                                             </div>
-
-                                            {/* Preset buttons — nhấn để điền nhanh */}
-                                            <div>
-                                                <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>
-                                                    Quick presets
-                                                </label>
-                                                <div className="flex flex-wrap gap-1">
-                                                    {[
-                                                        { label: 'Every minute', expr: '* * * * *' },
-                                                        { label: 'Every 5 mins', expr: '*/5 * * * *' },
-                                                        { label: 'Every hour', expr: '0 * * * *' },
-                                                        { label: 'Every day 9AM', expr: '0 9 * * *' },
-                                                        { label: 'Mon-Fri 9AM', expr: '0 9 * * 1-5' },
-                                                        { label: 'Every week (Sun)', expr: '0 0 * * 0' },
-                                                    ].map(p => (
-                                                        <button key={p.expr}
-                                                            type="button"
-                                                            className="px-2 py-0.5 text-[0.65rem] rounded transition"
-                                                            style={{
-                                                                background: cronSchedule === p.expr ? 'var(--primary)' : 'var(--glass)',
-                                                                color: cronSchedule === p.expr ? '#fff' : 'var(--fg)',
-                                                                border: '1px solid var(--border2)',
-                                                            }}
-                                                            onClick={() => handleCronScheduleChange(p.expr)}>
-                                                            {p.label}
-                                                        </button>
-                                                    ))}
+                                            {/* Toggle switch */}
+                                            <label className="relative inline-flex items-center cursor-pointer">
+                                                <input type="checkbox" className="sr-only peer"
+                                                    checked={cronEnabled}
+                                                    onChange={e => setCronEnabled(e.target.checked)} />
+                                                <div className="w-9 h-5 rounded-full transition"
+                                                    style={{
+                                                        background: cronEnabled ? 'var(--primary)' : 'var(--glass)',
+                                                        border: '1px solid var(--border2)',
+                                                    }}>
+                                                    <div className="w-4 h-4 bg-white rounded-full transition-transform"
+                                                        style={{
+                                                            transform: cronEnabled ? 'translateX(16px)' : 'translateX(2px)',
+                                                            marginTop: '1px',
+                                                        }} />
                                                 </div>
-                                            </div>
+                                            </label>
+                                        </div>
 
-                                            {/* Profile dropdown — script sẽ chạy trên profile này */}
-                                            <div>
-                                                <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>
-                                                    Run profile
-                                                </label>
-                                                <select className="w-full rounded px-2 py-1.5 text-[0.75rem]"
-                                                    style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
-                                                    value={cronProfileId}
-                                                    onChange={e => setCronProfileId(e.target.value)}>
-                                                    <option value="">-- Select profile --</option>
-                                                    {profiles.map(p => (
-                                                        <option key={p.id} value={p.id}>{p.name || p.id}</option>
-                                                    ))}
-                                                </select>
-                                                {!profiles.length && (
-                                                    <p className="text-[0.62rem] mt-1" style={{ color: '#ef4444' }}>
-                                                        Chưa có profile nào. Hãy tạo profile trước.
+                                        <p className="text-[0.66rem]" style={{ color: 'var(--muted)' }}>
+                                            When enabled, the script will automatically run according to the cron schedule on the specified profile.
+                                        </p>
+
+                                        {/* Khi bật → hiển thị các field bên dưới */}
+                                        {cronEnabled && (
+                                            <>
+                                                {/* Cron expression input */}
+                                                <div>
+                                                    <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>
+                                                        Cron expression
+                                                    </label>
+                                                    <input type="text"
+                                                        id="cron-expression-input"
+                                                        className="w-full rounded px-2 py-1.5 text-[0.75rem] font-mono"
+                                                        style={{ background: 'var(--glass-input)', border: `1px solid ${cronError ? '#ef4444' : 'var(--border2)'}`, color: 'var(--fg)' }}
+                                                        value={cronSchedule}
+                                                        onChange={e => handleCronScheduleChange(e.target.value)}
+                                                        placeholder="e.g. 0 9 * * 1-5" />
+                                                    <p className="text-[0.62rem] mt-1" style={{ color: 'var(--muted)' }}>
+                                                        Format: <code>minute hour day month weekday</code>
                                                     </p>
-                                                )}
-                                            </div>
-
-                                            {/* Bug #5: hiển thị lỗi cron expression */}
-                                            {cronError && (
-                                                <div className="rounded px-2 py-1.5 text-[0.66rem]"
-                                                    style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', color: '#ef4444' }}>
-                                                    ⚠️ {cronError}
                                                 </div>
-                                            )}
 
-                                            {/* Bug #6: mô tả lịch + nút Test Run Now */}
-                                            {cronSchedule && cronProfileId && !cronError && (
-                                                <div className="rounded px-2 py-2 text-[0.66rem]"
-                                                    style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)', color: 'var(--fg)' }}>
-                                                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                                                        <div>
-                                                            <span style={{ color: 'rgba(34,197,94,0.9)', fontWeight: 600 }}>📅 Lịch: </span>
-                                                            {describeCron(cronSchedule)}
-                                                            <span className="font-mono ml-1" style={{ color: 'var(--muted)' }}>({cronSchedule})</span>
-                                                        </div>
-                                                        {/* Bug #6: nút Test Run Now — chạy ngay với profile đã chọn */}
-                                                        {editing?.id && (
-                                                            <button
-                                                                id="btn-schedule-run-now"
+                                                {/* Preset buttons — nhấn để điền nhanh */}
+                                                <div>
+                                                    <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>
+                                                        Quick presets
+                                                    </label>
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {[
+                                                            { label: 'Every minute', expr: '* * * * *' },
+                                                            { label: 'Every 5 mins', expr: '*/5 * * * *' },
+                                                            { label: 'Every hour', expr: '0 * * * *' },
+                                                            { label: 'Every day 9AM', expr: '0 9 * * *' },
+                                                            { label: 'Mon-Fri 9AM', expr: '0 9 * * 1-5' },
+                                                            { label: 'Every week (Sun)', expr: '0 0 * * 0' },
+                                                        ].map(p => (
+                                                            <button key={p.expr}
                                                                 type="button"
-                                                                disabled={runNowLoading}
                                                                 className="px-2 py-0.5 text-[0.65rem] rounded transition"
                                                                 style={{
-                                                                    background: runNowLoading ? 'var(--glass)' : 'rgba(59,130,246,0.15)',
-                                                                    border: '1px solid rgba(59,130,246,0.4)',
-                                                                    color: runNowLoading ? 'var(--muted)' : '#60a5fa',
-                                                                    cursor: runNowLoading ? 'not-allowed' : 'pointer',
-                                                                    whiteSpace: 'nowrap',
+                                                                    background: cronSchedule === p.expr ? 'var(--primary)' : 'var(--glass)',
+                                                                    color: cronSchedule === p.expr ? '#fff' : 'var(--fg)',
+                                                                    border: '1px solid var(--border2)',
                                                                 }}
-                                                                onClick={async () => {
-                                                                    setRunNowLoading(true);
-                                                                    try {
-                                                                        const res = await window.electronAPI.scriptRunNow(editing.id);
-                                                                        if (res?.success) {
-                                                                            alert(`✅ Script "${editing.name}" chạy thành công!`);
-                                                                        } else if (res?.skipped) {
-                                                                            alert('⚠️ Script đang chạy rồi, không thể chạy song song.');
-                                                                        } else {
-                                                                            alert(`❌ Lỗi: ${res?.error || 'Unknown error'}`);
-                                                                        }
-                                                                    } catch (e) {
-                                                                        alert(`❌ Lỗi: ${e?.message || String(e)}`);
-                                                                    } finally {
-                                                                        setRunNowLoading(false);
-                                                                    }
-                                                                }}
-                                                            >
-                                                                {runNowLoading ? '⏳ Đang chạy...' : '▶ Test Run Now'}
+                                                                onClick={() => handleCronScheduleChange(p.expr)}>
+                                                                {p.label}
                                                             </button>
-                                                        )}
+                                                        ))}
                                                     </div>
                                                 </div>
-                                            )}
-                                        </>
-                                    )}
+
+                                                {/* Profile dropdown — script sẽ chạy trên profile này */}
+                                                <div>
+                                                    <label className="text-[0.68rem] font-medium mb-1 block" style={{ color: 'var(--muted)' }}>
+                                                        Run profile
+                                                    </label>
+                                                    <select className="w-full rounded px-2 py-1.5 text-[0.75rem]"
+                                                        style={{ background: 'var(--glass-input)', border: '1px solid var(--border2)', color: 'var(--fg)' }}
+                                                        value={cronProfileId}
+                                                        onChange={e => setCronProfileId(e.target.value)}>
+                                                        <option value="">-- Select profile --</option>
+                                                        {profiles.map(p => (
+                                                            <option key={p.id} value={p.id}>{p.name || p.id}</option>
+                                                        ))}
+                                                    </select>
+                                                    {!profiles.length && (
+                                                        <p className="text-[0.62rem] mt-1" style={{ color: '#ef4444' }}>
+                                                            Chưa có profile nào. Hãy tạo profile trước.
+                                                        </p>
+                                                    )}
+                                                </div>
+
+                                                {/* Bug #5: hiển thị lỗi cron expression */}
+                                                {cronError && (
+                                                    <div className="rounded px-2 py-1.5 text-[0.66rem]"
+                                                        style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', color: '#ef4444' }}>
+                                                        ⚠️ {cronError}
+                                                    </div>
+                                                )}
+
+                                                {/* Bug #6: mô tả lịch + nút Test Run Now */}
+                                                {cronSchedule && cronProfileId && !cronError && (
+                                                    <div className="rounded px-2 py-2 text-[0.66rem]"
+                                                        style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)', color: 'var(--fg)' }}>
+                                                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                                                            <div>
+                                                                <span style={{ color: 'rgba(34,197,94,0.9)', fontWeight: 600 }}>📅 Lịch: </span>
+                                                                {describeCron(cronSchedule)}
+                                                                <span className="font-mono ml-1" style={{ color: 'var(--muted)' }}>({cronSchedule})</span>
+                                                            </div>
+                                                            {/* Bug #6: nút Test Run Now — chạy ngay với profile đã chọn */}
+                                                            {editing?.id && (
+                                                                <button
+                                                                    id="btn-schedule-run-now"
+                                                                    type="button"
+                                                                    disabled={runNowLoading}
+                                                                    className="px-2 py-0.5 text-[0.65rem] rounded transition"
+                                                                    style={{
+                                                                        background: runNowLoading ? 'var(--glass)' : 'rgba(59,130,246,0.15)',
+                                                                        border: '1px solid rgba(59,130,246,0.4)',
+                                                                        color: runNowLoading ? 'var(--muted)' : '#60a5fa',
+                                                                        cursor: runNowLoading ? 'not-allowed' : 'pointer',
+                                                                        whiteSpace: 'nowrap',
+                                                                    }}
+                                                                    onClick={async () => {
+                                                                        setRunNowLoading(true);
+                                                                        try {
+                                                                            const res = await window.electronAPI.scriptRunNow(editing.id);
+                                                                            if (res?.success) {
+                                                                                alert(`✅ Script "${editing.name}" chạy thành công!`);
+                                                                            } else if (res?.skipped) {
+                                                                                alert('⚠️ Script đang chạy rồi, không thể chạy song song.');
+                                                                            } else {
+                                                                                alert(`❌ Lỗi: ${res?.error || 'Unknown error'}`);
+                                                                            }
+                                                                        } catch (e) {
+                                                                            alert(`❌ Lỗi: ${e?.message || String(e)}`);
+                                                                        } finally {
+                                                                            setRunNowLoading(false);
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    {runNowLoading ? '⏳ Đang chạy...' : '▶ Test Run Now'}
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        ) : (
-                            <ApiReferencePanel onInsert={handleInsertSnippet} />
-                        )}
-                    </div>
+                            ) : (
+                                <ApiReferencePanel onInsert={handleInsertSnippet} />
+                            )}
+                        </div>
+                    )}
 
                     {/* Right: Code Editor */}
                     <div className="flex-1 flex flex-col" style={{ minWidth: '300px', background: 'var(--card)' }}>
+                        {/* Header bar */}
+                        <div className="px-3 py-1.5 flex items-center justify-between gap-2" style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)' }}>
+                            <div className="flex items-center gap-2 min-w-0">
+                                <button
+                                    type="button"
+                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[0.7rem] font-medium transition cursor-pointer"
+                                    style={{
+                                        background: showSettingsPanel ? 'var(--glass)' : 'var(--primary)',
+                                        color: showSettingsPanel ? 'var(--fg)' : '#fff',
+                                        border: '1px solid var(--border2)',
+                                    }}
+                                    onClick={() => setShowSettingsPanel(prev => !prev)}
+                                    title={showSettingsPanel ? 'Ẩn tab cấu hình (phóng to bảng code)' : 'Hiện tab cấu hình'}
+                                >
+                                    {showSettingsPanel ? (
+                                        <>
+                                            <ChevronLeft size={13} />
+                                            <span>Hide Settings</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Sliders size={13} />
+                                            <span>Show Settings</span>
+                                        </>
+                                    )}
+                                </button>
+
+                                <div className="flex items-center gap-1.5 truncate">
+                                    <FileCode size={13} style={{ color: 'var(--muted)' }} />
+                                    <span className="text-[0.78rem] font-semibold truncate" style={{ color: 'var(--fg)' }}>
+                                        {editing.name || '(untitled script)'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                                {editing.id && (
+                                    <button
+                                        type="button"
+                                        className="flex items-center gap-1 px-2.5 py-1 rounded text-[0.7rem] font-semibold text-white transition hover:brightness-110 cursor-pointer"
+                                        style={{ background: '#10b981' }}
+                                        onClick={() => openRunModal(editing)}
+                                        title="Run script"
+                                    >
+                                        <Play size={11} /> Run
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    className="btn btn-success text-[0.7rem] px-3 py-1 cursor-pointer"
+                                    onClick={handleSave}
+                                    title="Save script"
+                                >
+                                    Save
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Monaco Editor Container */}
                         <div className="flex-1 relative" style={{ minHeight: 200 }}>
                             <Editor height="100%" language="javascript" theme="vs-dark"
                                 value={editing.code} onChange={v => setEditing(p => ({ ...p, code: v || '' }))}
